@@ -5,12 +5,35 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.0.0';
+const CARD_VERSION = '1.0.1';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.0.1: New per-item font_family field (combo-box, FONT_OPTIONS list) with
+//         out-of-the-box loading: both Google Fonts and the DSEG segmented
+//         fonts are served identically via Fontsource's jsDelivr CDN
+//         (https://cdn.jsdelivr.net/npm/@fontsource/<slug>/400.css),
+//         stylesheet injected into document.head on first use, deduplicated
+//         via a module-level Set — no bundling, no manual setup. Default
+//         font_family is 'DSEG14 Modern' (not DSEG7 — this card also
+//         displays entity/text tiles, not just clock digits, and DSEG14's
+//         alphanumeric segments render sensibly for both). Card-level
+//         template variables reinstated from chrono-slideshow-card (every
+//         DEFAULT_CONFIG scalar key as {{ cardSnakeKeyInCamelCase }}, plus
+//         computed {{ cardDimmerOpacity }}) via a new substituteCardVariables()
+//         — a direct copy of slideshow's substitutePhotoVariables() with
+//         photo fields replaced by card fields; no exif/photo data exists
+//         here to expose. _setupSubscriptions() now runs on every hass
+//         update rather than gated to first-time-only, so a card field's
+//         substituted value (cardDimmerOpacity chief among them) actually
+//         refreshes as the underlying value changes — the existing per-item
+//         diff (unchanged substituted string = no-op) is what keeps this
+//         cheap, exactly as it already does in chrono-slideshow-card. New UI
+//         color picker for letterbox_color in the Card configuration panel
+//         (previously YAML-only). getStubConfig()'s starter item's field
+//         values updated per user-specified defaults.
 // v1.0.0: Initial release. Sibling of chrono-slideshow-card, built from the
 //         same 9-zone item-overlay system (entity items and Jinja-template
 //         items, per-item styling, drag-reorder editor) and the same ambient
@@ -52,6 +75,7 @@ const DEFAULT_ITEM = {
   icon:             '',
   show_state:       false,
   font_color:       '',
+  font_family:      'DSEG14 Modern',
   font_size:        1.2,
   font_weight:      600,
   line_height:      1.2,
@@ -121,8 +145,7 @@ const SWIPE_THRESHOLD = 40; // px
 
 const DEFAULT_CONFIG = {
   // Flat background color for the entire card — no photo/slideshow engine
-  // exists here, so this is the only background there is. YAML-only, no
-  // dedicated UI field, matching chrono-slideshow-card's own convention.
+  // exists here, so this is the only background there is.
   letterbox_color: '#000000',
   // Dimmer: a full-coverage overlay whose opacity is derived from an ambient
   // lux sensor, compensating for tablet brightness limits. dimmer_color is
@@ -166,6 +189,56 @@ const ZONE_ALIGNMENT_OPTIONS = [
   { label: 'Center', value: 'center' },
   { label: 'Right',  value: 'right'  },
 ];
+
+// ─── Fonts ────────────────────────────────────────────────────────────────────
+// A curated list, not the full Google Fonts / Fontsource catalog (1500+ entries
+// would make the dropdown unusable). Each entry's `value` is the exact
+// font-family name Fontsource's CSS declares; `slug` is the Fontsource npm
+// package name used to build the CDN URL. Google Fonts and the DSEG segmented
+// fonts are loaded through the exact same mechanism — see ensureFontLoaded().
+const FONT_OPTIONS = [
+  { label: 'Theme default',      value: '',                    slug: ''                     },
+  { label: 'DSEG14 Modern',      value: 'DSEG14 Modern',       slug: 'dseg14-modern'         },
+  { label: 'DSEG7 Modern',       value: 'DSEG7 Modern',        slug: 'dseg7-modern'          },
+  { label: 'DSEG14 Classic',     value: 'DSEG14 Classic',      slug: 'dseg14-classic'        },
+  { label: 'DSEG7 Classic',      value: 'DSEG7 Classic',       slug: 'dseg7-classic'         },
+  { label: 'DSEG14 Modern Mini', value: 'DSEG14 Modern Mini',  slug: 'dseg14-modern-mini'    },
+  { label: 'DSEG7 Modern Mini',  value: 'DSEG7 Modern Mini',   slug: 'dseg7-modern-mini'     },
+  { label: 'Roboto',             value: 'Roboto',              slug: 'roboto'                },
+  { label: 'Open Sans',          value: 'Open Sans',           slug: 'open-sans'             },
+  { label: 'Montserrat',         value: 'Montserrat',          slug: 'montserrat'            },
+  { label: 'Poppins',            value: 'Poppins',             slug: 'poppins'               },
+  { label: 'Inter',              value: 'Inter',               slug: 'inter'                 },
+  { label: 'Oswald',             value: 'Oswald',              slug: 'oswald'                },
+  { label: 'Rajdhani',           value: 'Rajdhani',            slug: 'rajdhani'              },
+  { label: 'Orbitron',           value: 'Orbitron',            slug: 'orbitron'              },
+  { label: 'Share Tech Mono',    value: 'Share Tech Mono',     slug: 'share-tech-mono'       },
+  { label: 'VT323',              value: 'VT323',               slug: 'vt323'                 },
+  { label: 'Press Start 2P',     value: 'Press Start 2P',      slug: 'press-start-2p'        },
+];
+
+const _FONT_SLUG_BY_FAMILY = new Map(FONT_OPTIONS.filter(f => f.slug).map(f => [f.value, f.slug]));
+
+// Stylesheets already injected into document.head, keyed by font-family name
+// — module-level so it's shared across every card instance on the dashboard,
+// not just this one. A font is only ever injected once per page load.
+const _injectedFonts = new Set();
+
+// Loads a font "out of the box": both Google Fonts and DSEG are served by
+// Fontsource through the same CDN path (weight 400 only — sufficient for a
+// dashboard tile; font_weight is applied separately via CSS regardless).
+// An unrecognized font_family (hand-typed in YAML, not from FONT_OPTIONS) is
+// left alone — assumed to already be available as a system or theme font.
+function ensureFontLoaded(fontFamily) {
+  if (!fontFamily || _injectedFonts.has(fontFamily)) return;
+  const slug = _FONT_SLUG_BY_FAMILY.get(fontFamily);
+  if (!slug) return;
+  _injectedFonts.add(fontFamily);
+  const link = document.createElement('link');
+  link.rel  = 'stylesheet';
+  link.href = `https://cdn.jsdelivr.net/npm/@fontsource/${slug}/400.css`;
+  document.head.appendChild(link);
+}
 
 const SHOW_ITEM_POSITION_BADGES = false;
 
@@ -328,6 +401,79 @@ function handleAction(node, hass, config, action) {
       // Unknown action: do nothing, exactly as HA does.
       break;
   }
+}
+
+// ─── substituteCardVariables ────────────────────────────────────────────────────
+// Direct adaptation of chrono-slideshow-card's substitutePhotoVariables(), with
+// photo fields replaced by card fields — no exif/photo data exists in this
+// card. Resolves any {{ }} expression's bare identifier tokens against
+// cardData BEFORE handing the template to HA's render_template. Any token
+// that is an exact, word-boundary-matched key in cardData is replaced with a
+// Jinja2 literal (quoted string, or bare number/boolean for values that look
+// numeric/boolean) — filters, operators, and any other identifier (e.g. a
+// states() call) are left untouched for HA's own Jinja2 engine. If, after
+// substitution, no {{ are left, the caller skips the websocket entirely.
+const _TEMPLATE_EXPR_RE = /\{\{(.*?)\}\}/gs;
+const _IDENTIFIER_RE    = /[A-Za-z_][A-Za-z0-9_]*/g;
+
+function _jinjaLiteral(value) {
+  if (value === null || value === undefined) return "''";
+  const s = String(value);
+  if (s === '')                       return "''";
+  if (/^-?\d+(\.\d+)?$/.test(s))      return s;                 // bare int/float
+  if (s === 'true' || s === 'false')  return s;                 // bare boolean
+  // Quote as a Jinja2 string literal; escape embedded single quotes.
+  return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function substituteCardVariables(template, cardData) {
+  const tmpl = String(template ?? '');
+  if (!tmpl.includes('{{') || !cardData) {
+    return { text: tmpl, fullyLiteral: !tmpl.includes('{{') };
+  }
+
+  let fullyLiteral = true;
+
+  // First pass: determine, per block, whether it is a pure bare-identifier
+  // card-field reference (no filters/operators/other text inside the braces).
+  // If every block in the template qualifies, the second pass below renders
+  // plain text directly (raw value, no quoting) instead of Jinja2 syntax.
+  const blocks = [];
+  tmpl.replace(_TEMPLATE_EXPR_RE, (whole, inner) => {
+    const trimmed = inner.trim();
+    const isBareIdentifier = /^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed);
+    const isCardField      = isBareIdentifier && Object.prototype.hasOwnProperty.call(cardData, trimmed);
+    if (!isCardField) fullyLiteral = false;
+    blocks.push({ inner, isCardField, field: isCardField ? trimmed : null });
+    return whole;
+  });
+
+  let blockIndex = 0;
+  if (fullyLiteral) {
+    // Every block is a bare card-field reference — render plain text, no
+    // Jinja2 involvement, no surrounding braces or quoting.
+    const text = tmpl.replace(_TEMPLATE_EXPR_RE, () => {
+      const { field } = blocks[blockIndex++];
+      const value = cardData[field];
+      return value === null || value === undefined ? '' : String(value);
+    });
+    return { text, fullyLiteral: true };
+  }
+
+  // Mixed or non-card template: substitute only the bare card-field blocks
+  // with Jinja2 literals, leave everything else (filters, states() calls,
+  // expressions) untouched for HA's render_template to evaluate.
+  const text = tmpl.replace(_TEMPLATE_EXPR_RE, (whole, inner) => {
+    const replaced = inner.replace(_IDENTIFIER_RE, (token) => {
+      if (Object.prototype.hasOwnProperty.call(cardData, token)) {
+        return _jinjaLiteral(cardData[token]);
+      }
+      return token; // not a card field — leave for HA (states(), filters, etc.)
+    });
+    return `{{${replaced}}}`;
+  });
+
+  return { text, fullyLiteral: false };
 }
 
 // ─── ctParseNumber ────────────────────────────────────────────────────────────
@@ -1016,6 +1162,7 @@ class ChronoTileCardEditor extends LitElement {
   // ── Option arrays ─────────────────────────────────────────────────────────
   _verticalOptions      = VERTICAL_OPTIONS;
   _horizontalOptions    = HORIZONTAL_OPTIONS;
+  _fontFamilyOptions    = FONT_OPTIONS;
   _zoneAlignmentOptions = ZONE_ALIGNMENT_OPTIONS;
 
   // ─── Zones panel (internal alignment only — no transition mode here) ──────
@@ -1152,6 +1299,11 @@ class ChronoTileCardEditor extends LitElement {
                       ${ctToggleField('Show state', item.show_state ?? false, e => this._itemToggled(index, 'show_state', e))}
                     </div>
                   ` : ''}
+
+                  <!-- Font family: combo-box, Google Fonts + DSEG, loaded on demand via Fontsource -->
+                  <div class="item-content-row">
+                    ${ctSelectField('Font family', item.font_family ?? '', this._fontFamilyOptions, e => this._itemChanged(index, 'font_family', e))}
+                  </div>
 
                   <!-- Typography: font color, size, weight, line height, border radius -->
                   <div class="item-typography">
@@ -1570,6 +1722,11 @@ class ChronoTileCardEditor extends LitElement {
 
       <ha-expansion-panel header="Card configuration" outlined .expanded=${false}>
 
+        <!-- Background color -->
+        <div class="card-row-1">
+          ${ctColorPicker('Background color', c.letterbox_color ?? '#000000', e => this._valueChanged('letterbox_color', e))}
+        </div>
+
         <!-- Dimmer -->
         <div class="card-row">
           ${ctToggleField('Ambient dimmer', c.dimmer_enabled ?? false, e => this._toggleChanged('dimmer_enabled', e), '', true)}
@@ -1638,13 +1795,29 @@ class ChronoTileCard extends LitElement {
       ...DEFAULT_CONFIG,
       items: [{
         ...DEFAULT_TEMPLATE_ITEM,
-        _id:         generateId([]),
-        template:    "{{ now().strftime('%H:%M') }}",
-        vertical:    'top',
-        horizontal:  'center',
-        font_color:  'white',
-        font_size:   1.5,
-        font_weight: 600,
+        _id:                      generateId([]),
+        show:                     true,
+        horizontal:               'center',
+        vertical:                 'middle',
+        icon:                     '',
+        show_state:               false,
+        font_color:               '#888888',
+        font_size:                15,
+        font_weight:              400,
+        line_height:              1.2,
+        border_radius:            50,
+        background_color:         '',
+        padding_top:              10,
+        padding_bottom:           10,
+        padding_left:             10,
+        padding_right:            10,
+        text_shadow_color:        '',
+        text_shadow_blur:         0,
+        text_shadow_offset_x:     0,
+        text_shadow_offset_y:     0,
+        text_shadow_stroke_width: 0,
+        text_shadow_layers:       2,
+        template:                 "{{ now().strftime('%H:%M') }}",
       }],
     };
   }
@@ -1668,9 +1841,12 @@ class ChronoTileCard extends LitElement {
   set hass(hass) {
     const prev = this._hass;
     this._hass  = hass;
-    if (this._config && !this._subscribed) {
-      this._setupSubscriptions();
-    }
+    // Runs on every hass update, not just the first — the per-item diff in
+    // _setupSubscriptions() (unchanged substituted string = no-op) is what
+    // keeps this cheap, exactly as in chrono-slideshow-card. Needed so a
+    // substituted card field whose value keeps changing (cardDimmerOpacity
+    // chief among them) actually stays live.
+    if (this._config) this._setupSubscriptions();
     if (this._hassShouldRender(prev, hass)) this.requestUpdate();
   }
 
@@ -1727,34 +1903,72 @@ class ChronoTileCard extends LitElement {
   }
 
   // ── Template/entity subscriptions for overlay items ─────────────────────
-  // Each template item's raw string is sent to HA's render_template exactly
-  // as written — there is no photo data to pre-substitute, unlike
-  // chrono-slideshow-card. Subscriptions are diffed per item (keyed by
-  // `item-<index>`) against the previously-subscribed template string for
-  // that same item; an unchanged template keeps its existing subscription
-  // untouched.
+  // For each template item, run substituteCardVariables against the current
+  // card field values first (chrono-slideshow-card's exact mechanism, with
+  // photo fields replaced by card fields — no photo data exists here). It
+  // reports whether every {{ }} block was a bare card-field reference
+  // (fullyLiteral) — if so, the rendered plain-text value is used directly
+  // with no websocket involved at all. If any block contains a filter,
+  // expression, or a live HA-state reference (e.g. states()), the
+  // substituted string is sent to render_template — exactly
+  // chrono-picture-card's subscription mechanism, applied to the
+  // post-substitution text.
+  //
+  // Subscriptions are diffed per item (keyed by `item-<index>`) against the
+  // previously-substituted string for that same item, kept in _itemSubs. An
+  // item whose substituted text is unchanged keeps its existing open
+  // subscription untouched. Only an item whose substituted text actually
+  // differs — typically because it references a card field whose value
+  // changed, cardDimmerOpacity chief among them — has its old subscription
+  // torn down and a new one (or, if fullyLiteral, a plain value) opened.
+  // This method runs on every hass update (see set hass()), so that diff is
+  // what keeps repeated calls cheap, not something to avoid triggering.
   _setupSubscriptions() {
     if (!this._itemSubs) this._itemSubs = new Map();
 
     const items = this._config?.items ?? [];
+    const c     = this._config ?? {};
     const seenKeys = new Set();
+
+    // Every root-level DEFAULT_CONFIG scalar key, snake_case converted to
+    // camelCase with a 'card' prefix (e.g. dimmer_max_opacity ->
+    // {{ cardDimmerMaxOpacity }}), so it's usable in any template item.
+    // cardDimmerOpacity is a computed value (0–100, 1 decimal), not a raw
+    // config key.
+    const _toCamel = s => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const cardData = {};
+    const skipKeys = new Set(['zone_alignment', 'items']);
+    for (const key of Object.keys(DEFAULT_CONFIG)) {
+      if (skipKeys.has(key)) continue;
+      const camelKey = 'card' + _toCamel(key).replace(/^./, ch => ch.toUpperCase());
+      cardData[camelKey] = c[key] ?? DEFAULT_CONFIG[key];
+    }
+    cardData['cardDimmerOpacity'] = Math.round(this._computeDimmerOpacity() * 1000) / 10;
 
     items.forEach((item, index) => {
       if (!('template' in item)) return;
-      const key      = `item-${index}`;
-      const template = item.template ?? '';
+      const key = `item-${index}`;
       seenKeys.add(key);
+      const { text: substituted, fullyLiteral } = substituteCardVariables(item.template ?? '', cardData);
       const existing = this._itemSubs.get(key);
 
-      if (existing && existing.template === template) return; // unchanged — leave subscription alone
+      if (existing && existing.substituted === substituted) return; // unchanged — leave subscription alone
 
+      // Substituted text changed (or no prior subscription) — tear down the
+      // old one for this key only, then (re)establish.
       if (existing?.unsub) this._unsubscribeOne(existing.unsub);
+
+      if (fullyLiteral) {
+        this._itemValues = { ...this._itemValues, [key]: substituted };
+        this._itemSubs.set(key, { substituted, unsub: null });
+        return;
+      }
 
       const unsub = this._hass.connection.subscribeMessage(
         (msg) => { this._itemValues = { ...this._itemValues, [key]: msg.result }; },
-        { type: 'render_template', template }
+        { type: 'render_template', template: substituted }
       );
-      this._itemSubs.set(key, { template, unsub });
+      this._itemSubs.set(key, { substituted, unsub });
     });
 
     // Remove subscriptions for items that no longer exist (item removed/retyped).
@@ -1899,6 +2113,7 @@ class ChronoTileCard extends LitElement {
     const raw      = v => (v !== '' && v != null) ? `${v}`   : undefined;
     return {
       'color':            item.font_color       || undefined,
+      'font-family':      item.font_family      || undefined,
       'font-size':        emScaled(item.font_size),
       'font-weight':      raw(item.font_weight),
       'line-height':      raw(item.line_height),
@@ -1921,6 +2136,7 @@ class ChronoTileCard extends LitElement {
   // ── Render a single overlay item ──────────────────────────────────────────
   _renderItem(item) {
     if (item.show === false) return html``;
+    ensureFontLoaded(item.font_family);
     if ('template' in item) {
       const key    = `item-${this._config.items.indexOf(item)}`;
       const value  = this._itemValues[key] ?? '';
