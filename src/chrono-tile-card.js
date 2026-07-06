@@ -5,12 +5,24 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.0.8';
+const CARD_VERSION = '1.0.9';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.0.9: Renamed letterbox_color -> background_color (better describes its
+//         purpose here, no letterboxing occurs in this card). Renamed
+//         dimmer_min_opacity/dimmer_max_opacity -> dimmer_opacity_min/
+//         dimmer_opacity_max, for consistency with dimmer_lux_min/
+//         dimmer_lux_max's naming order. Clean break, no migration for either
+//         rename — confirmed acceptable since this card has no installed
+//         base yet. New dimmer_color UI color picker, directly below
+//         Ambient lux sensor. Restored attribute/prefix/suffix for entity
+//         items (YAML-only, no UI fields, exactly matching
+//         chrono-slideshow-card) — this should have been carried over in
+//         v1.0.0 already; it was described as part of the port but the
+//         actual code was never written.
 // v1.0.8: Default font_family changed from DSEG14 Modern to DSEG7 Classic.
 //         Stub item's font_size changed from 15 to 12, since DSEG7 Classic
 //         renders larger per-em than the previous default — 12 matches the
@@ -204,19 +216,19 @@ const SWIPE_THRESHOLD = 40; // px
 const DEFAULT_CONFIG = {
   // Flat background color for the entire card — no photo/slideshow engine
   // exists here, so this is the only background there is.
-  letterbox_color: '#000000',
+  background_color: '#000000',
   // Dimmer: a full-coverage overlay whose opacity is derived from an ambient
-  // lux sensor, compensating for tablet brightness limits. dimmer_color is
-  // YAML-only. All opacity values are plain percentage numbers (0–100).
-  // dimmer_aggressiveness is stored as 1–100 (UI slider percentage), converted
-  // internally via 10^((pct-50)/50) giving a 0.1–10 range where 50 = 1
-  // (pure human-eye perceptual curve, cube-root baseline).
+  // lux sensor, compensating for tablet brightness limits. All opacity
+  // values are plain percentage numbers (0–100). dimmer_aggressiveness is
+  // stored as 1–100 (UI slider percentage), converted internally via
+  // 10^((pct-50)/50) giving a 0.1–10 range where 50 = 1 (pure human-eye
+  // perceptual curve, cube-root baseline).
   dimmer_enabled:         false,
   dimmer_entity:          '',
   dimmer_lux_min:         0,
   dimmer_lux_max:         40,
-  dimmer_min_opacity:     0,
-  dimmer_max_opacity:     80,
+  dimmer_opacity_min:     0,
+  dimmer_opacity_max:     80,
   dimmer_color:           '#000000',
   dimmer_aggressiveness:  50,
   zone_alignment:         { ...DEFAULT_ZONE_ALIGNMENT },
@@ -1782,7 +1794,7 @@ class ChronoTileCardEditor extends LitElement {
 
         <!-- Background color -->
         <div class="card-row-1">
-          ${ctColorPicker('Background color', c.letterbox_color ?? '#000000', e => this._valueChanged('letterbox_color', e))}
+          ${ctColorPicker('Background color', c.background_color ?? '#000000', e => this._valueChanged('background_color', e))}
         </div>
 
         <!-- Dimmer -->
@@ -1799,13 +1811,16 @@ class ChronoTileCardEditor extends LitElement {
             @value-changed=${e => this._valueChanged('dimmer_entity', e)}
           ></ha-entity-picker>
         </div>
+        <div class="card-row-1">
+          ${ctColorPicker('Dimmer color', c.dimmer_color ?? DEFAULT_CONFIG.dimmer_color, e => this._valueChanged('dimmer_color', e))}
+        </div>
         <div class="card-row">
           ${ctTextField('Lux min', c.dimmer_lux_min ?? 0, e => this._numericValueChanged('dimmer_lux_min', e), { type: 'number', step: '1', min: '0' })}
           ${ctTextField('Lux max', c.dimmer_lux_max ?? 40, e => this._numericValueChanged('dimmer_lux_max', e), { type: 'number', step: '1', min: '0' })}
         </div>
         <div class="card-row">
-          ${ctTextField('Max opacity (%)', c.dimmer_max_opacity ?? 80, e => this._numericValueChanged('dimmer_max_opacity', e), { type: 'number', step: '1', min: '0', max: '100' })}
-          ${ctTextField('Min opacity (%)', c.dimmer_min_opacity ?? 0, e => this._numericValueChanged('dimmer_min_opacity', e), { type: 'number', step: '1', min: '0', max: '100' })}
+          ${ctTextField('Max opacity (%)', c.dimmer_opacity_max ?? 80, e => this._numericValueChanged('dimmer_opacity_max', e), { type: 'number', step: '1', min: '0', max: '100' })}
+          ${ctTextField('Min opacity (%)', c.dimmer_opacity_min ?? 0, e => this._numericValueChanged('dimmer_opacity_min', e), { type: 'number', step: '1', min: '0', max: '100' })}
         </div>
         <div class="card-row-1">
           <div class="slider-field">
@@ -2010,7 +2025,7 @@ class ChronoTileCard extends LitElement {
     const seenKeys = new Set();
 
     // Every root-level DEFAULT_CONFIG scalar key, snake_case converted to
-    // camelCase with a 'card' prefix (e.g. dimmer_max_opacity ->
+    // camelCase with a 'card' prefix (e.g. dimmer_opacity_max ->
     // {{ cardDimmerMaxOpacity }}), so it's usable in any template item.
     // cardDimmerOpacity is a computed value (0–100, 1 decimal), not a raw
     // config key.
@@ -2175,8 +2190,8 @@ class ChronoTileCard extends LitElement {
 
     const luxMin  = c.dimmer_lux_min  ?? DEFAULT_CONFIG.dimmer_lux_min;
     const luxMax  = c.dimmer_lux_max  ?? DEFAULT_CONFIG.dimmer_lux_max;
-    const opMin   = (c.dimmer_min_opacity ?? DEFAULT_CONFIG.dimmer_min_opacity) / 100;
-    const opMax   = (c.dimmer_max_opacity ?? DEFAULT_CONFIG.dimmer_max_opacity) / 100;
+    const opMin   = (c.dimmer_opacity_min ?? DEFAULT_CONFIG.dimmer_opacity_min) / 100;
+    const opMax   = (c.dimmer_opacity_max ?? DEFAULT_CONFIG.dimmer_opacity_max) / 100;
     const aggrPct = c.dimmer_aggressiveness ?? DEFAULT_CONFIG.dimmer_aggressiveness;
     const aggr    = Math.pow(10, (aggrPct - 50) / 50);
 
@@ -2238,9 +2253,11 @@ class ChronoTileCard extends LitElement {
       }
       const itemConfig = { ...item, entity: item.entity };
       const stateLabel = item.show_state
-        ? (this._hass?.formatEntityState
-            ? this._hass.formatEntityState(stateObj)
-            : stateObj.state)
+        ? (item.attribute
+            ? `${item.prefix ?? ''}${stateObj.attributes?.[item.attribute] ?? ''}${item.suffix ?? ''}`
+            : (this._hass?.formatEntityState
+                ? this._hass.formatEntityState(stateObj)
+                : stateObj.state))
         : '';
 
       return html`
@@ -2401,7 +2418,7 @@ class ChronoTileCard extends LitElement {
       <ha-card>
         <div
           class="tile-container"
-          style=${styleMap({ 'background-color': c.letterbox_color || undefined })}
+          style=${styleMap({ 'background-color': c.background_color || undefined })}
           @pointerdown=${(e) => this._onPointerDown(e)}
           @pointermove=${(e) => this._onPointerMove(e)}
           @pointerup=${(e) => this._onPointerUp(e)}
