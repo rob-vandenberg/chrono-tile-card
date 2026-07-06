@@ -5,12 +5,28 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.0.9';
+const CARD_VERSION = '1.0.10';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.0.10: FONT_OPTIONS: removed DSEG14/DSEG7 Modern and both Mini variants;
+//          kept DSEG14 Classic and DSEG7 Classic; added their italic
+//          counterparts (DSEG14 Classic Italic, DSEG7 Classic Italic) —
+//          confirmed on Fontsource/keshikan's own font samples that both
+//          Classic families ship a genuine italic style, not a synthetic
+//          slant. Each FONT_OPTIONS entry now has a `family` (actual CSS
+//          font-family) distinct from `value` (the dropdown key stored in
+//          font_family), plus an `italic` flag — needed because an italic
+//          entry shares its upright counterpart's font file/family, loading
+//          400-italic.css instead of 400.css, distinguished only by
+//          font-style. ensureFontLoaded() and _itemStyleMap() both updated
+//          to resolve dropdown value -> {family, slug, italic} via a new
+//          _FONT_OPTION_BY_VALUE map; a font_family value not found in
+//          FONT_OPTIONS (hand-typed in YAML) is still used as a literal CSS
+//          family name, unchanged behavior. getStubConfig()'s item font_color
+//          changed from #888888 to #808080.
 // v1.0.9: Renamed letterbox_color -> background_color (better describes its
 //         purpose here, no letterboxing occurs in this card). Renamed
 //         dimmer_min_opacity/dimmer_max_opacity -> dimmer_opacity_min/
@@ -266,49 +282,64 @@ const ZONE_ALIGNMENT_OPTIONS = [
 // font-family name Fontsource's CSS declares; `slug` is the Fontsource npm
 // package name used to build the CDN URL. Google Fonts and the DSEG segmented
 // fonts are loaded through the exact same mechanism — see ensureFontLoaded().
+// ─── Fonts ────────────────────────────────────────────────────────────────────
+// A curated list, not the full Google Fonts / Fontsource catalog (1500+ entries
+// would make the dropdown unusable). `value` is the unique dropdown key stored
+// in font_family — distinct from `family` (the actual CSS font-family name)
+// so an italic entry can share the same underlying font file as its upright
+// counterpart while still being a separate selectable option. `slug` is the
+// Fontsource npm package name used to build the CDN URL; `italic` selects
+// which style file to load and sets font-style on the item. Google Fonts and
+// the DSEG segmented fonts are loaded through the exact same mechanism — see
+// ensureFontLoaded().
 const FONT_OPTIONS = [
-  { label: 'Theme default',      value: '',                    slug: ''                     },
-  { label: 'DSEG14 Modern',      value: 'DSEG14 Modern',       slug: 'dseg14-modern'         },
-  { label: 'DSEG7 Modern',       value: 'DSEG7 Modern',        slug: 'dseg7-modern'          },
-  { label: 'DSEG14 Classic',     value: 'DSEG14 Classic',      slug: 'dseg14-classic'        },
-  { label: 'DSEG7 Classic',      value: 'DSEG7 Classic',       slug: 'dseg7-classic'         },
-  { label: 'DSEG14 Modern Mini', value: 'DSEG14 Modern Mini',  slug: 'dseg14-modern-mini'    },
-  { label: 'DSEG7 Modern Mini',  value: 'DSEG7 Modern Mini',   slug: 'dseg7-modern-mini'     },
-  { label: 'Roboto',             value: 'Roboto',              slug: 'roboto'                },
-  { label: 'Open Sans',          value: 'Open Sans',           slug: 'open-sans'             },
-  { label: 'Montserrat',         value: 'Montserrat',          slug: 'montserrat'            },
-  { label: 'Poppins',            value: 'Poppins',             slug: 'poppins'               },
-  { label: 'Inter',              value: 'Inter',               slug: 'inter'                 },
-  { label: 'Oswald',             value: 'Oswald',              slug: 'oswald'                },
-  { label: 'Rajdhani',           value: 'Rajdhani',            slug: 'rajdhani'              },
-  { label: 'Orbitron',           value: 'Orbitron',            slug: 'orbitron'              },
-  { label: 'Share Tech Mono',    value: 'Share Tech Mono',     slug: 'share-tech-mono'       },
-  { label: 'VT323',              value: 'VT323',               slug: 'vt323'                 },
-  { label: 'Press Start 2P',     value: 'Press Start 2P',      slug: 'press-start-2p'        },
+  { label: 'Theme default',         value: '',                        family: '',               slug: '',               italic: false },
+  { label: 'DSEG14 Classic',        value: 'DSEG14 Classic',          family: 'DSEG14 Classic', slug: 'dseg14-classic', italic: false },
+  { label: 'DSEG14 Classic Italic', value: 'DSEG14 Classic Italic',   family: 'DSEG14 Classic', slug: 'dseg14-classic', italic: true  },
+  { label: 'DSEG7 Classic',         value: 'DSEG7 Classic',           family: 'DSEG7 Classic',  slug: 'dseg7-classic',  italic: false },
+  { label: 'DSEG7 Classic Italic',  value: 'DSEG7 Classic Italic',    family: 'DSEG7 Classic',  slug: 'dseg7-classic',  italic: true  },
+  { label: 'Roboto',                value: 'Roboto',                  family: 'Roboto',         slug: 'roboto',                italic: false },
+  { label: 'Open Sans',             value: 'Open Sans',               family: 'Open Sans',      slug: 'open-sans',             italic: false },
+  { label: 'Montserrat',            value: 'Montserrat',              family: 'Montserrat',     slug: 'montserrat',            italic: false },
+  { label: 'Poppins',               value: 'Poppins',                 family: 'Poppins',        slug: 'poppins',               italic: false },
+  { label: 'Inter',                 value: 'Inter',                   family: 'Inter',          slug: 'inter',                 italic: false },
+  { label: 'Oswald',                value: 'Oswald',                  family: 'Oswald',         slug: 'oswald',                italic: false },
+  { label: 'Rajdhani',              value: 'Rajdhani',                family: 'Rajdhani',       slug: 'rajdhani',              italic: false },
+  { label: 'Orbitron',              value: 'Orbitron',                family: 'Orbitron',       slug: 'orbitron',              italic: false },
+  { label: 'Share Tech Mono',       value: 'Share Tech Mono',         family: 'Share Tech Mono',slug: 'share-tech-mono',       italic: false },
+  { label: 'VT323',                 value: 'VT323',                   family: 'VT323',          slug: 'vt323',                 italic: false },
+  { label: 'Press Start 2P',        value: 'Press Start 2P',          family: 'Press Start 2P', slug: 'press-start-2p',        italic: false },
 ];
 
-const _FONT_SLUG_BY_FAMILY = new Map(FONT_OPTIONS.filter(f => f.slug).map(f => [f.value, f.slug]));
+const _FONT_OPTION_BY_VALUE = new Map(FONT_OPTIONS.map(f => [f.value, f]));
 
-// Stylesheets already injected into document.head, keyed by font-family name
-// — module-level so it's shared across every card instance on the dashboard,
-// not just this one. A font is only ever injected once per page load.
+// Stylesheets already injected into document.head, keyed by the option's
+// dropdown value (not the CSS family name — italic and non-italic entries
+// sharing one family need separate injection, since they load different
+// Fontsource CSS files) — module-level so it's shared across every card
+// instance on the dashboard, not just this one. A given option is only ever
+// injected once per page load.
 const _injectedFonts = new Set();
 
 // Loads a font "out of the box": both Google Fonts and DSEG are served by
-// Fontsource through the same CDN path (weight 400 only — sufficient for a
-// dashboard tile; font_weight is applied separately via CSS regardless).
-// An unrecognized font_family (hand-typed in YAML, not from FONT_OPTIONS) is
-// left alone — assumed to already be available as a system or theme font.
-function ensureFontLoaded(fontFamily) {
-  if (!fontFamily || _injectedFonts.has(fontFamily)) return;
-  const slug = _FONT_SLUG_BY_FAMILY.get(fontFamily);
-  if (!slug) return;
-  _injectedFonts.add(fontFamily);
+// Fontsource through the same CDN path. Italic entries load the
+// `400-italic.css` file specifically; everything else loads `400.css`
+// (weight 400 only — sufficient for a dashboard tile; font_weight is applied
+// separately via CSS regardless). An item's font_family that doesn't match
+// any FONT_OPTIONS value (hand-typed in YAML) is left alone — assumed to
+// already be available as a system or theme font.
+function ensureFontLoaded(fontFamilyValue) {
+  if (!fontFamilyValue || _injectedFonts.has(fontFamilyValue)) return;
+  const opt = _FONT_OPTION_BY_VALUE.get(fontFamilyValue);
+  if (!opt?.slug) return;
+  _injectedFonts.add(fontFamilyValue);
+  const file = opt.italic ? '400-italic.css' : '400.css';
   const link = document.createElement('link');
   link.rel  = 'stylesheet';
-  link.href = `https://cdn.jsdelivr.net/npm/@fontsource/${slug}/400.css`;
+  link.href = `https://cdn.jsdelivr.net/npm/@fontsource/${opt.slug}/${file}`;
   document.head.appendChild(link);
 }
+
 
 const SHOW_ITEM_POSITION_BADGES = false;
 
@@ -1874,7 +1905,7 @@ class ChronoTileCard extends LitElement {
         vertical:                 'middle',
         icon:                     '',
         show_state:               false,
-        font_color:               '#888888',
+        font_color:               '#808080',
         font_size:                12,
         font_weight:              400,
         line_height:              1.2,
@@ -2205,9 +2236,16 @@ class ChronoTileCard extends LitElement {
     const pxScaled = v => (v !== '' && v != null) ? `calc(${v}px * var(--scale-factor, 1))` : undefined;
     const emScaled = v => (v !== '' && v != null) ? `calc(${v}em * var(--scale-factor, 1))` : undefined;
     const raw      = v => (v !== '' && v != null) ? `${v}`   : undefined;
+    // item.font_family stores a FONT_OPTIONS dropdown value, which may differ
+    // from the actual CSS font-family name (italic entries share their
+    // upright counterpart's family, distinguished only by font-style). A
+    // value not found in FONT_OPTIONS (hand-typed in YAML) is used as-is,
+    // assumed to already be a valid CSS family name.
+    const fontOpt = _FONT_OPTION_BY_VALUE.get(item.font_family);
     return {
       'color':            item.font_color       || undefined,
-      'font-family':      item.font_family      || undefined,
+      'font-family':      (fontOpt ? fontOpt.family : item.font_family) || undefined,
+      'font-style':       fontOpt?.italic ? 'italic' : undefined,
       'font-size':        emScaled(item.font_size),
       'font-weight':      raw(item.font_weight),
       'line-height':      raw(item.line_height),
