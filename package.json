@@ -1,0 +1,10 @@
+{
+  "name": "chrono-tile-card",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "terser src/chrono-tile-card.js -o dist/chrono-tile-card.js --compress --mangle"
+  },
+  "devDependencies": {
+    "terser": "^5.0.0"
+  }
+}
