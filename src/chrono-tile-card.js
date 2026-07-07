@@ -5,12 +5,22 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.0.10';
+const CARD_VERSION = '1.0.11';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.0.11: Hardened the ResizeObserver attachment. render() has a
+//          !this._config early-return (no ha-card at all) before its one
+//          real content branch. Lit's firstUpdated() runs exactly once,
+//          ever — if the very first render had landed on that empty branch,
+//          firstUpdated() would find no ha-card, return early, and never
+//          fire again, permanently leaving --scale-factor unset. Replaced
+//          firstUpdated() with updated() (runs after every render),
+//          re-attaching the observer only when the ha-card node itself has
+//          changed (tracked via _observedCardEl) — a no-op on the
+//          overwhelming majority of renders where it hasn't.
 // v1.0.10: FONT_OPTIONS: removed DSEG14/DSEG7 Modern and both Mini variants;
 //          kept DSEG14 Classic and DSEG7 Classic; added their italic
 //          counterparts (DSEG14 Classic Italic, DSEG7 Classic Italic) —
@@ -1940,6 +1950,7 @@ class ChronoTileCard extends LitElement {
     this._touchStartX     = null;
     this._touchStartY     = null;
     this._resizeObserver  = null;
+    this._observedCardEl  = null; // which ha-card node the observer currently watches — re-attaches in updated() whenever this differs from the current one
   }
 
   set hass(hass) {
@@ -1997,22 +2008,30 @@ class ChronoTileCard extends LitElement {
     );
   }
 
-  // Lit calls firstUpdated() exactly once, after the component's first
-  // render has completed and patched the shadow DOM — guaranteeing ha-card
-  // exists (given _config is already set by this point). connectedCallback()
-  // cannot be used for this: super.connectedCallback() only schedules the
-  // first render, it does not run it synchronously, so ha-card is provably
-  // absent from the shadow DOM at any point still inside connectedCallback().
-  // Observing the host element instead (as a fallback) is not equivalent: on
-  // the dashboard the host's own height happens to match ha-card's, masking
-  // the bug, but in the editor dialog the host resolves to a real, distinct
-  // zero height (confirmed via direct measurement) while ha-card still gets
-  // a real height from its own aspect-ratio rule — two different elements
-  // with two different sizes, and the wrong one was being watched.
-  firstUpdated(changedProps) {
-    super.firstUpdated(changedProps);
+  // firstUpdated() runs exactly once, ever — insufficient here: render() has
+  // an empty (!this._config) branch before its one real content branch. If
+  // the very first render landed on the empty branch (no ha-card at all),
+  // firstUpdated() would find nothing, return early, and never fire again —
+  // leaving --scale-factor stuck forever, since nothing else ever sets it.
+  // updated() runs after every render, so it can detect the branch switch
+  // and re-attach; comparing against _observedCardEl keeps this a no-op on the
+  // overwhelming majority of renders where the branch didn't change.
+  // connectedCallback() cannot be used for the first attachment either:
+  // super.connectedCallback() only schedules the first render, it does not
+  // run it synchronously, so ha-card is provably absent from the shadow DOM
+  // at any point still inside connectedCallback(). Observing the host
+  // element instead (as a fallback) is not equivalent: on the dashboard the
+  // host's own height happens to match ha-card's, masking the bug, but in
+  // the editor dialog the host resolves to a real, distinct zero height
+  // (confirmed via direct measurement) while ha-card still gets a real
+  // height from its own aspect-ratio rule — two different elements with two
+  // different sizes, and the wrong one was being watched.
+  updated(changedProps) {
+    super.updated(changedProps);
     const cardEl = this.shadowRoot?.querySelector('ha-card');
-    if (!cardEl) return;
+    if (!cardEl || cardEl === this._observedCardEl) return;
+    this._resizeObserver?.disconnect();
+    this._observedCardEl = cardEl;
     this._resizeObserver = new ResizeObserver(entries => {
       const height = entries[0]?.contentRect?.height;
       if (!height) return;
