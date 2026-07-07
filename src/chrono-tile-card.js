@@ -5,12 +5,51 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.0.11';
+const CARD_VERSION = '1.1.12';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.1.12: Minor version bump — full port of chrono-slideshow-card's
+//         v1.1.42-v1.1.50 item/zone/shadow overhaul, adapted for this
+//         card's differences (no zone_modes/Transition row; ct-prefixed
+//         shared components; has font_family, which is unaffected by any
+//         of this and stays 'DSEG7 Classic'). Summary (see
+//         chrono-slideshow-card.js's own history for full reasoning behind
+//         each):
+//         - padding_top/bottom/left/right replaced with padding_horizontal/
+//           padding_vertical + new margin_top/margin_bottom fields
+//         - DEFAULT_ITEM overhaul: font_color '#FFFFFF', font_size 1,
+//           font_weight 400; line_height, border_radius, the 2 padding
+//           fields, the 2 margin fields, and all 4 shadow/stroke numeric
+//           fields now default to '' (empty) instead of a number
+//         - new shadow-field interlock in _itemChanged(): while
+//           text_shadow_color is set, blur/offset-x/offset-y cannot be
+//           cleared directly (snaps to 0 instead); the moment color
+//           transitions from empty to set, any of those three that are
+//           currently empty get filled with 0 once
+//         - text-shadow render guard: requires both offsets non-empty
+//           (CSS's own <shadow> grammar requires them together), not just
+//           color
+//         - editor labels: px/em suffixes dropped everywhere; seconds/%/lux
+//           kept — "Minimum/Maximum Ambient light (lux)", "Max/Min
+//           opacity %"; padding/margin labels reordered noun-first
+//         - new zone_offset_x/zone_offset_y: transform: translate() on
+//           .overlay-zone, +x=right/-x=left, +y=UP/-y=DOWN for every zone
+//           (CSS's own translateY sign negated once at render time),
+//           default magnitude 12, signs reproducing each zone's own
+//           inset direction. Old fixed 8px .overlay-zone padding removed
+//           entirely. migrateConfig() backfills missing zone keys in both
+//           dictionaries
+//         - editor: new "Margins (x,y)" row per band, 6 mini paired
+//           fields; required adding part="input"/part="combobox" (CSS
+//           Shadow Parts) to CtTextfield/CtSelect, previously exposing no
+//           external sizing hook. Zones panel rows (Alignment + Margins)
+//           unified to 48px, scoped via ::part() so nothing else in the
+//           editor is affected
+//         - getStubConfig() updated to the new field names, its own
+//           explicit override values otherwise unchanged
 // v1.0.11: Hardened the ResizeObserver attachment. render() has a
 //          !this._config early-return (no ha-card at all) before its one
 //          real content branch. Lit's firstUpdated() runs exactly once,
@@ -170,22 +209,22 @@ const DEFAULT_ITEM = {
   vertical:         'middle',
   icon:             '',
   show_state:       false,
-  font_color:       '',
+  font_color:       '#FFFFFF',
   font_family:      'DSEG7 Classic',
-  font_size:        1.2,
-  font_weight:      600,
-  line_height:      1.2,
-  border_radius:    50,
+  font_size:        1,
+  font_weight:      400,
+  line_height:      '',
+  border_radius:    '',
   background_color: '',
-  padding_top:      10,
-  padding_bottom:   10,
-  padding_left:     10,
-  padding_right:    10,
+  padding_horizontal: '',
+  padding_vertical:   '',
+  margin_top:         '',
+  margin_bottom:      '',
   text_shadow_color:        '',
-  text_shadow_blur:         0,
-  text_shadow_offset_x:     0,
-  text_shadow_offset_y:     0,
-  text_shadow_stroke_width: 0,
+  text_shadow_blur:         '',
+  text_shadow_offset_x:     '',
+  text_shadow_offset_y:     '',
+  text_shadow_stroke_width: '',
   text_shadow_layers:       2, // YAML-only, no dedicated UI field — edit manually to change
 };
 
@@ -205,6 +244,42 @@ const DEFAULT_ZONE_ALIGNMENT = {
   'bottom-left':   'left',
   'bottom-center': 'center',
   'bottom-right':  'right',
+};
+
+// Per-zone position fine-tuning. Human-facing sign convention: +X is right,
+// -X is left, +Y is UP, -Y is DOWN — for every zone, regardless of which
+// corner/edge it's pinned to (the rendering code negates the configured Y
+// value when building the transform, so this sign flip is invisible to the
+// user). A zone does not stretch to fill its 1/3-width cell — it
+// shrink-wraps to its own content and sits pinned to whichever edge its
+// column/row dictates; these offsets are what let a zone actually center
+// (or otherwise reposition) within that reserved space. Defaults inset each
+// zone 12px away from its own edge: left-column shift right (+12),
+// right-column shift left (-12), center columns don't shift horizontally
+// (0); top-row shift down (-12 under this convention), bottom-row shift up
+// (+12), middle row doesn't shift vertically (0). A corner zone gets both.
+const DEFAULT_ZONE_OFFSET_X = {
+  'top-left':      12,
+  'top-center':    0,
+  'top-right':    -12,
+  'middle-left':   12,
+  'middle-center': 0,
+  'middle-right': -12,
+  'bottom-left':   12,
+  'bottom-center': 0,
+  'bottom-right': -12,
+};
+
+const DEFAULT_ZONE_OFFSET_Y = {
+  'top-left':     -12,
+  'top-center':   -12,
+  'top-right':    -12,
+  'middle-left':    0,
+  'middle-center':  0,
+  'middle-right':   0,
+  'bottom-left':   12,
+  'bottom-center': 12,
+  'bottom-right':  12,
 };
 
 // Reference card height (px) at which a font_size value renders at its
@@ -258,14 +333,24 @@ const DEFAULT_CONFIG = {
   dimmer_color:           '#000000',
   dimmer_aggressiveness:  50,
   zone_alignment:         { ...DEFAULT_ZONE_ALIGNMENT },
+  zone_offset_x:          { ...DEFAULT_ZONE_OFFSET_X },
+  zone_offset_y:          { ...DEFAULT_ZONE_OFFSET_Y },
   items:                  [],
 };
 
 const NUMERIC_ITEM_KEYS = new Set([
   'font_size', 'font_weight', 'line_height', 'border_radius',
-  'padding_top', 'padding_bottom', 'padding_left', 'padding_right',
+  'padding_horizontal', 'padding_vertical', 'margin_top', 'margin_bottom',
   'text_shadow_blur', 'text_shadow_offset_x', 'text_shadow_offset_y',
   'text_shadow_stroke_width',
+]);
+
+// While text_shadow_color is set, these three cannot be emptied directly —
+// see _itemChanged(). text_shadow_stroke_width is deliberately excluded:
+// the stroke is independent of the shadow (no CSS grammar coupling), so it
+// keeps the plain "empty is always allowed" behavior every other field has.
+const SHADOW_DEPENDENT_KEYS = new Set([
+  'text_shadow_blur', 'text_shadow_offset_x', 'text_shadow_offset_y',
 ]);
 
 const VERTICAL_OPTIONS = [
@@ -413,6 +498,20 @@ function migrateConfig(config) {
   const missingAlignmentKey = Object.keys(DEFAULT_ZONE_ALIGNMENT).some(k => !(k in zoneAlignment));
   if (missingAlignmentKey) {
     config   = { ...config, zone_alignment: { ...DEFAULT_ZONE_ALIGNMENT, ...zoneAlignment } };
+    migrated = true;
+  }
+
+  const zoneOffsetX = config.zone_offset_x ?? {};
+  const missingOffsetXKey = Object.keys(DEFAULT_ZONE_OFFSET_X).some(k => !(k in zoneOffsetX));
+  if (missingOffsetXKey) {
+    config   = { ...config, zone_offset_x: { ...DEFAULT_ZONE_OFFSET_X, ...zoneOffsetX } };
+    migrated = true;
+  }
+
+  const zoneOffsetY = config.zone_offset_y ?? {};
+  const missingOffsetYKey = Object.keys(DEFAULT_ZONE_OFFSET_Y).some(k => !(k in zoneOffsetY));
+  if (missingOffsetYKey) {
+    config   = { ...config, zone_offset_y: { ...DEFAULT_ZONE_OFFSET_Y, ...zoneOffsetY } };
     migrated = true;
   }
 
@@ -725,6 +824,7 @@ class CtTextfield extends LitElement {
   render() {
     return html`
       <input
+        part="input"
         .value=${live(this.value ?? '')}
         type=${this.type ?? 'text'}
         step=${this.step ?? ''}
@@ -1034,7 +1134,7 @@ class CtSelect extends LitElement {
   render() {
     const opts = this.options ?? [];
     return html`
-      <div class="combobox ${this._open ? 'combobox-open' : ''}">
+      <div part="combobox" class="combobox ${this._open ? 'combobox-open' : ''}">
         <input
           class="combobox-input"
           .value=${live(this.value ?? '')}
@@ -1142,6 +1242,20 @@ class ChronoTileCardEditor extends LitElement {
     this._fireConfig();
   }
 
+  // axis is 'x' or 'y', selecting zone_offset_x or zone_offset_y.
+  _zoneOffsetChanged(axis, zoneKey, e) {
+    if (!this._config) return;
+    this._clearUndo();
+    const raw    = e.target.value ?? e.detail?.value;
+    const parsed = ctParseNumber(raw);
+    if (parsed === null) return;
+    const configKey = axis === 'x' ? 'zone_offset_x' : 'zone_offset_y';
+    const defaults   = axis === 'x' ? DEFAULT_ZONE_OFFSET_X : DEFAULT_ZONE_OFFSET_Y;
+    const updated    = { ...(this._config[configKey] ?? defaults), [zoneKey]: parsed };
+    this._config     = { ...this._config, [configKey]: updated };
+    this._fireConfig();
+  }
+
   // ── Item-level UI field changed ───────────────────────────────────────────
   _itemChanged(index, key, e) {
     if (!this._config) return;
@@ -1152,11 +1266,28 @@ class ChronoTileCardEditor extends LitElement {
       const parsed = ctParseNumber(raw);
       if (parsed === null) return;
       value = parsed;
+      // Once a shadow color is set, blur/offset-x/offset-y cannot be
+      // cleared directly — the only way to make the shadow disappear is to
+      // clear the color itself. An attempted clear snaps back to 0 instead.
+      if (value === '' && SHADOW_DEPENDENT_KEYS.has(key) && this._config.items[index]?.text_shadow_color) {
+        value = 0;
+      }
     } else {
       value = raw;
     }
-    let items    = [...(this._config.items ?? [])];
-    items[index] = { ...items[index], [key]: value };
+    let items      = [...(this._config.items ?? [])];
+    const wasColor = items[index]?.text_shadow_color;
+    let   updated  = { ...items[index], [key]: value };
+    // The moment text_shadow_color transitions from empty to a real value,
+    // any of blur/offset-x/offset-y that are CURRENTLY empty (not ones that
+    // already hold a value) get filled with 0 once, so a valid shadow
+    // renders immediately without requiring three more fields by hand.
+    if (key === 'text_shadow_color' && !wasColor && value) {
+      for (const depKey of SHADOW_DEPENDENT_KEYS) {
+        if (updated[depKey] === '') updated[depKey] = 0;
+      }
+    }
+    items[index] = updated;
     if (key === 'horizontal' || key === 'vertical') items = sortItems(items);
     this._config = { ...this._config, items };
     this._fireConfig();
@@ -1279,13 +1410,20 @@ class ChronoTileCardEditor extends LitElement {
   // ─── Zones panel (internal alignment only — no transition mode here) ──────
   _renderZonesPanel() {
     const zoneAlignment = this._config?.zone_alignment ?? DEFAULT_ZONE_ALIGNMENT;
+    const zoneOffsetX   = this._config?.zone_offset_x  ?? DEFAULT_ZONE_OFFSET_X;
+    const zoneOffsetY   = this._config?.zone_offset_y  ?? DEFAULT_ZONE_OFFSET_Y;
     const bands = ['top', 'middle', 'bottom'];
     return html`
       <ha-expansion-panel header="Zones configuration" outlined .expanded=${false}>
         <p class="zone-modes-hint">
           Alignment controls how multiple items stacked in the same zone align
           relative to each other — independent from which screen position the
-          zone itself occupies.
+          zone itself occupies. Margins shift the entire zone's contents,
+          since a zone does not stretch to fill its 1/3 of the screen — it
+          sits pinned to whichever edge its column/row dictates. Positive x
+          moves right, negative x moves left; positive y moves up, negative
+          y moves down — for every zone, regardless of which corner or edge
+          it's in.
         </p>
         ${bands.map(band => {
           const cols = _GROUP_DEFS.filter(g => g.vertical === band); // left, center, right in order
@@ -1299,6 +1437,27 @@ class ChronoTileCardEditor extends LitElement {
                 ${cols.map(g => {
                   const zoneKey = `${g.vertical}-${g.horizontal}`;
                   return ctSelectField('', zoneAlignment[zoneKey] ?? g.horizontal, this._zoneAlignmentOptions, e => this._zoneAlignmentChanged(zoneKey, e));
+                })}
+
+                <div class="zone-band-rowlabel">Margins (x,y)</div>
+                ${cols.map(g => {
+                  const zoneKey = `${g.vertical}-${g.horizontal}`;
+                  return html`
+                    <div class="zone-offset-pair">
+                      <chrono-ct-textfield
+                        class="zone-offset-mini"
+                        type="number" step="1"
+                        .value=${String(zoneOffsetX[zoneKey] ?? 0)}
+                        @input=${e => this._zoneOffsetChanged('x', zoneKey, e)}
+                      ></chrono-ct-textfield>
+                      <chrono-ct-textfield
+                        class="zone-offset-mini"
+                        type="number" step="1"
+                        .value=${String(zoneOffsetY[zoneKey] ?? 0)}
+                        @input=${e => this._zoneOffsetChanged('y', zoneKey, e)}
+                      ></chrono-ct-textfield>
+                    </div>
+                  `;
                 })}
               </div>
             </div>
@@ -1419,28 +1578,28 @@ class ChronoTileCardEditor extends LitElement {
                   <!-- Typography: font color, size, weight, line height, border radius -->
                   <div class="item-typography">
                     ${ctColorPicker('Font color', item.font_color ?? '', e => this._itemChanged(index, 'font_color', e))}
-                    ${ctTextField('Font size (em)', item.font_size   ?? '', e => this._itemChanged(index, 'font_size',   e), { type: 'number', step: '0.1', min: '0' })}
+                    ${ctTextField('Font size', item.font_size   ?? '', e => this._itemChanged(index, 'font_size',   e), { type: 'number', step: '0.1', min: '0' })}
                     ${ctTextField('Font weight',    item.font_weight ?? '', e => this._itemChanged(index, 'font_weight', e), { type: 'number', step: '100', min: '100', max: '900' })}
                     ${ctTextField('Line height',    item.line_height ?? '', e => this._itemChanged(index, 'line_height', e), { type: 'number', step: '0.1', min: '0' })}
-                    ${ctTextField('Border\nradius (px)', item.border_radius ?? '', e => this._itemChanged(index, 'border_radius', e), { type: 'number', step: '1', min: '0' })}
+                    ${ctTextField('Border radius', item.border_radius ?? '', e => this._itemChanged(index, 'border_radius', e), { type: 'number', step: '1', min: '0' })}
                   </div>
 
-                  <!-- Background color and padding -->
+                  <!-- Background color, padding (horizontal/vertical), margin (top/bottom) -->
                   <div class="item-bg-color-padding">
                     ${ctColorPicker('Background color', item.background_color ?? '', e => this._itemChanged(index, 'background_color', e))}
-                    ${ctTextField('Padding\ntop (px)',    item.padding_top    ?? '', e => this._itemChanged(index, 'padding_top',    e), { type: 'number', step: '1', min: '0' })}
-                    ${ctTextField('Padding\nbottom (px)', item.padding_bottom ?? '', e => this._itemChanged(index, 'padding_bottom', e), { type: 'number', step: '1', min: '0' })}
-                    ${ctTextField('Padding\nleft (px)',   item.padding_left   ?? '', e => this._itemChanged(index, 'padding_left',   e), { type: 'number', step: '1', min: '0' })}
-                    ${ctTextField('Padding\nright (px)',  item.padding_right  ?? '', e => this._itemChanged(index, 'padding_right',  e), { type: 'number', step: '1', min: '0' })}
+                    ${ctTextField('Vertical padding',   item.padding_vertical   ?? '', e => this._itemChanged(index, 'padding_vertical',   e), { type: 'number', step: '1', min: '0' })}
+                    ${ctTextField('Horizontal padding', item.padding_horizontal ?? '', e => this._itemChanged(index, 'padding_horizontal', e), { type: 'number', step: '1', min: '0' })}
+                    ${ctTextField('Top margin',         item.margin_top         ?? '', e => this._itemChanged(index, 'margin_top',         e), { type: 'number', step: '1' })}
+                    ${ctTextField('Bottom margin',      item.margin_bottom      ?? '', e => this._itemChanged(index, 'margin_bottom',      e), { type: 'number', step: '1' })}
                   </div>
 
                   <!-- Text shadow / stroke: color, blur, x/y offset, stroke width -->
                   <div class="item-text-shadow">
                     ${ctColorPicker('Shadow color', item.text_shadow_color ?? '', e => this._itemChanged(index, 'text_shadow_color', e))}
-                    ${ctTextField('Shadow\nblur (px)',     item.text_shadow_blur         ?? '', e => this._itemChanged(index, 'text_shadow_blur',         e), { type: 'number', step: '1', min: '0' })}
-                    ${ctTextField('Shadow\noffset X (px)', item.text_shadow_offset_x     ?? '', e => this._itemChanged(index, 'text_shadow_offset_x',     e), { type: 'number', step: '1' })}
-                    ${ctTextField('Shadow\noffset Y (px)', item.text_shadow_offset_y     ?? '', e => this._itemChanged(index, 'text_shadow_offset_y',     e), { type: 'number', step: '1' })}
-                    ${ctTextField('Stroke\nwidth (px)',    item.text_shadow_stroke_width ?? '', e => this._itemChanged(index, 'text_shadow_stroke_width', e), { type: 'number', step: '1', min: '0' })}
+                    ${ctTextField('Shadow blur',     item.text_shadow_blur         ?? '', e => this._itemChanged(index, 'text_shadow_blur',         e), { type: 'number', step: '1', min: '0' })}
+                    ${ctTextField('Shadow offset X', item.text_shadow_offset_x     ?? '', e => this._itemChanged(index, 'text_shadow_offset_x',     e), { type: 'number', step: '1' })}
+                    ${ctTextField('Shadow offset Y', item.text_shadow_offset_y     ?? '', e => this._itemChanged(index, 'text_shadow_offset_y',     e), { type: 'number', step: '1' })}
+                    ${ctTextField('Stroke width',    item.text_shadow_stroke_width ?? '', e => this._itemChanged(index, 'text_shadow_stroke_width', e), { type: 'number', step: '1', min: '0' })}
                   </div>
 
                   <!-- Remove button -->
@@ -1594,6 +1753,31 @@ class ChronoTileCardEditor extends LitElement {
       font-size: 12px;
       color: var(--secondary-text-color);
       text-align: center;
+    }
+
+    .zone-offset-pair {
+      display: flex;
+      gap: 4px;
+    }
+
+    .zone-offset-mini {
+      width: 0; /* flex-basis via flex:1 below — width:0 avoids intrinsic-content overflow */
+      flex: 1;
+    }
+
+    /* Zones panel only: both the Alignment select and the Margins
+       mini-fields share one uniform 48px row height — the select's own
+       default (56px, used everywhere else in the editor) and a mini-field's
+       natural size were too far apart from each other. */
+    .zone-band-grid chrono-ct-select::part(combobox) {
+      height: 48px;
+    }
+
+    .zone-offset-mini::part(input) {
+      height: 48px;
+      font-size: 13px;
+      text-align: center;
+      padding: 0 4px;
     }
 
     /* ── Text fields ───────────────────────────────────────────────────────── */
@@ -1856,12 +2040,12 @@ class ChronoTileCardEditor extends LitElement {
           ${ctColorPicker('Dimmer color', c.dimmer_color ?? DEFAULT_CONFIG.dimmer_color, e => this._valueChanged('dimmer_color', e))}
         </div>
         <div class="card-row">
-          ${ctTextField('Lux min', c.dimmer_lux_min ?? 0, e => this._numericValueChanged('dimmer_lux_min', e), { type: 'number', step: '1', min: '0' })}
-          ${ctTextField('Lux max', c.dimmer_lux_max ?? 40, e => this._numericValueChanged('dimmer_lux_max', e), { type: 'number', step: '1', min: '0' })}
+          ${ctTextField('Minimum Ambient light (lux)', c.dimmer_lux_min ?? 0, e => this._numericValueChanged('dimmer_lux_min', e), { type: 'number', step: '1', min: '0' })}
+          ${ctTextField('Maximum Ambient light (lux)', c.dimmer_lux_max ?? 40, e => this._numericValueChanged('dimmer_lux_max', e), { type: 'number', step: '1', min: '0' })}
         </div>
         <div class="card-row">
-          ${ctTextField('Max opacity (%)', c.dimmer_opacity_max ?? 80, e => this._numericValueChanged('dimmer_opacity_max', e), { type: 'number', step: '1', min: '0', max: '100' })}
-          ${ctTextField('Min opacity (%)', c.dimmer_opacity_min ?? 0, e => this._numericValueChanged('dimmer_opacity_min', e), { type: 'number', step: '1', min: '0', max: '100' })}
+          ${ctTextField('Max opacity %', c.dimmer_opacity_max ?? 80, e => this._numericValueChanged('dimmer_opacity_max', e), { type: 'number', step: '1', min: '0', max: '100' })}
+          ${ctTextField('Min opacity %', c.dimmer_opacity_min ?? 0, e => this._numericValueChanged('dimmer_opacity_min', e), { type: 'number', step: '1', min: '0', max: '100' })}
         </div>
         <div class="card-row-1">
           <div class="slider-field">
@@ -1921,10 +2105,10 @@ class ChronoTileCard extends LitElement {
         line_height:              1.2,
         border_radius:            50,
         background_color:         '',
-        padding_top:              10,
-        padding_bottom:           10,
-        padding_left:             10,
-        padding_right:            10,
+        padding_vertical:         10,
+        padding_horizontal:       10,
+        margin_top:               '',
+        margin_bottom:            '',
         text_shadow_color:        '',
         text_shadow_blur:         0,
         text_shadow_offset_x:     0,
@@ -2270,11 +2454,13 @@ class ChronoTileCard extends LitElement {
       'line-height':      raw(item.line_height),
       'border-radius':    pxScaled(item.border_radius),
       'background-color': item.background_color || undefined,
-      'padding-top':      pxScaled(item.padding_top),
-      'padding-bottom':   pxScaled(item.padding_bottom),
-      'padding-left':     pxScaled(item.padding_left),
-      'padding-right':    pxScaled(item.padding_right),
-      'text-shadow':              item.text_shadow_color
+      'padding-top':      pxScaled(item.padding_vertical),
+      'padding-bottom':   pxScaled(item.padding_vertical),
+      'padding-left':     pxScaled(item.padding_horizontal),
+      'padding-right':    pxScaled(item.padding_horizontal),
+      'margin-top':       pxScaled(item.margin_top),
+      'margin-bottom':    pxScaled(item.margin_bottom),
+      'text-shadow':              (item.text_shadow_color && item.text_shadow_offset_x !== '' && item.text_shadow_offset_y !== '')
         ? Array(Math.max(1, Number(item.text_shadow_layers ?? 2) || 1))
             .fill(`${pxScaled(item.text_shadow_offset_x ?? 0)} ${pxScaled(item.text_shadow_offset_y ?? 0)} ${pxScaled(item.text_shadow_blur ?? 0)} ${item.text_shadow_color}`)
             .join(', ')
@@ -2347,8 +2533,17 @@ class ChronoTileCard extends LitElement {
     if (items.length === 0) return html``;
     const zoneKey   = `${vertical}-${horizontal}`;
     const alignment = this._config?.zone_alignment?.[zoneKey] ?? DEFAULT_ZONE_ALIGNMENT[zoneKey] ?? horizontal;
+    const offsetX   = this._config?.zone_offset_x?.[zoneKey] ?? DEFAULT_ZONE_OFFSET_X[zoneKey] ?? 0;
+    const offsetY   = this._config?.zone_offset_y?.[zoneKey] ?? DEFAULT_ZONE_OFFSET_Y[zoneKey] ?? 0;
+    // CSS translateY's positive direction is down; the configured value's
+    // positive direction is up (see DEFAULT_ZONE_OFFSET_Y's comment) — this
+    // negation is the one place that sign convention actually gets applied.
+    const cssOffsetY = -offsetY;
     return html`
-      <div class="overlay-zone overlay-zone-align-${alignment}">
+      <div
+        class="overlay-zone overlay-zone-align-${alignment}"
+        style="transform: translate(calc(${offsetX}px * var(--scale-factor, 1)), calc(${cssOffsetY}px * var(--scale-factor, 1)));"
+      >
         ${items.map(item => this._renderItem(item))}
       </div>
     `;
@@ -2426,7 +2621,6 @@ class ChronoTileCard extends LitElement {
       flex-direction: column;
       gap: calc(4px * var(--scale-factor, 1));
       pointer-events: auto;
-      padding: calc(8px * var(--scale-factor, 1));
     }
     .overlay-zone-align-left   { align-items: flex-start; text-align: left;   }
     .overlay-zone-align-center { align-items: center;     text-align: center; }
