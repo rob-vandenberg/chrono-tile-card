@@ -5,12 +5,25 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.1.12';
+const CARD_VERSION = '1.1.13';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.1.13: Fix: --scale-factor could get permanently stuck unset on a fresh
+//          page load — same root cause found and fixed in
+//          chrono-slideshow-card v1.1.51 (diagnosed there via temporary
+//          debug logging, not guessed): a rapid disconnect/reconnect of the
+//          same component instance during initial page layout can land on
+//          the exact same ha-card DOM node, but disconnectedCallback()
+//          called .disconnect() on the ResizeObserver without ever clearing
+//          _observedCardEl — so the guard in updated() saw the same node,
+//          assumed a valid attach already existed, and skipped
+//          re-attaching, even though the observer it believed was watching
+//          had just been killed. Fixed by also nulling _resizeObserver and
+//          _observedCardEl in disconnectedCallback(), forcing any later
+//          reconnect to always re-attach fresh.
 // v1.1.12: Minor version bump — full port of chrono-slideshow-card's
 //         v1.1.42-v1.1.50 item/zone/shadow overhaul, adapted for this
 //         card's differences (no zone_modes/Transition row; ct-prefixed
@@ -2227,7 +2240,18 @@ class ChronoTileCard extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     this._teardownSubscriptions();
+    // Clearing both, not just disconnecting: the guard in updated() only
+    // compares cardEl === this._observedCardEl — it has no way to know the
+    // observer behind that node was just killed. A rapid disconnect/
+    // reconnect landing on the same ha-card node (same component instance,
+    // node identity preserved) would otherwise leave the guard believing a
+    // now-dead observer is still valid, permanently skipping re-attachment
+    // and leaving --scale-factor stuck unset — confirmed as a real failure
+    // mode via debug logging on chrono-slideshow-card (v1.1.51), same
+    // updated()/_observedCardEl mechanism, applied here unchanged.
     this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
+    this._observedCardEl = null;
   }
 
   // ── Template/entity subscriptions for overlay items ─────────────────────
