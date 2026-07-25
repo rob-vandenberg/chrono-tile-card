@@ -1,26 +1,24 @@
-  
  <div align="center">
 
   [![](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/hacs/integration)
   [![](https://img.shields.io/badge/License-AGPL_3.0-blue.svg?style=for-the-badge)](https://www.gnu.org/licenses/agpl-3.0)
-  [![](https://img.shields.io/badge/Version-1.0.34-brightgreen.svg?style=for-the-badge)](#)
+  [![](https://img.shields.io/github/v/release/rob-vandenberg/chrono-tile-card?style=for-the-badge&color=brightgreen&label=Version)](https://github.com/rob-vandenberg/chrono-tile-card/releases)
 
-  <img src="art/chrono-slideshow-card.svg" width="780" alt="Chrono Slideshow Card Banner">
+  <img src="art/header.svg" width="780" alt="Chrono Tile Card Banner">
 
-  <img src="art/banner.png" width="800" alt="Chrono Slideshow Card Banner">
+  <img src="art/banner.png" width="800" alt="Chrono Tile Card in action">
 
   <p align="center">
-    <strong>A photo slideshow card for Home Assistant dashboards.<br>
-            Cycles through the photos found by a chrono_folder sensor with smooth<br>
-            transitions, a fully configurable overlay grid, and touch/mouse gestures.</strong>
+    <strong>A freeform tile for entities and templates.<br>
+            Place items anywhere in a 9-zone grid, styled exactly how you want.<br>
+            Add an ambient-light dimmer for wall-mounted tablets.</strong>
   </p>
 
   <p align="center">
     <a href="#introduction">Introduction</a> •
     <a href="#key-features">Key Features</a> •
     <a href="#installation">Installation</a> •
-    <a href="#configuration">Configuration</a> •
-    <a href="#gestures">Gestures</a> •
+    <a href="#usage">Usage</a> •
     <a href="#license">License</a>
   </p>
 
@@ -28,11 +26,7 @@
 
 ---
 
-**Chrono Slideshow Card** turns your photos into a full-screen photo slideshow. Photos cycle on a timer with a choice of transition effects, and a 9-zone overlay grid lets you place clocks, dates, EXIF data, or any other entity or template content on top — each zone independently styled, positioned, and aligned.
-
-The card ships with a complete visual editor covering the vast majority of day-to-day configuration. A handful of more specialized settings — intentionally, to keep the editor from becoming overwhelming — are YAML-only, set via the card's own **Show code editor** view rather than a dedicated field. Every one of those is documented below.
-
-> **Requires** the [chrono_folder](https://github.com/rob-vandenberg/chrono_folder) integration to be installed and configured first — this card displays the photos that chrono_folder finds, it does not access the folders by itself.
+**Chrono Tile Card** splits the card into a 3×3 grid of zones - top, middle, and bottom rows, each with a left, center, and right position. You place items into those zones: entity items that show an icon and/or state, or template items that show any Jinja2 template you write. Every item can be styled on its own - font, color, size, background, shadow - and every zone can be nudged into exactly the spot you want.
 
 ---
 
@@ -44,15 +38,13 @@ The card ships with a complete visual editor covering the vast majority of day-t
   - [HACS (Recommended)](#hacs-recommended)
   - [Manual Installation](#manual-installation)
 - [Uninstallation](#uninstallation)
-- [Configuration](#configuration)
+- [Usage](#usage)
+  - [Adding the Card](#adding-the-card)
   - [Card Options](#card-options)
-  - [Zone Options](#zone-options)
-  - [Item Options (Shared)](#item-options-shared)
-  - [Entity Item Options](#entity-item-options)
-  - [Template Item Options](#template-item-options)
-  - [Advanced: YAML-only Options](#advanced-yaml-only-options)
-- [Gestures](#gestures)
-- [Examples](#examples)
+  - [Item Options](#item-options)
+  - [Gestures and Actions](#gestures-and-actions)
+  - [The Ambient Dimmer](#the-ambient-dimmer)
+- [Limitations](#limitations)
 - [License](#license)
 - [Support](#support)
 
@@ -60,26 +52,26 @@ The card ships with a complete visual editor covering the vast majority of day-t
 
 ## 🚀 Key Features
 
-### 🖼️ Smooth, Self-Warming Transitions
-Choose from Fade, four Slide directions, Curtain, Clock, None, or Random (which picks a different real transition every time, never repeating the same one twice in a row by accident — and never silently picking "None"). The next photo is always fully loaded and ready well before its turn arrives, so transitions stay smooth even at the very first photo.
+### 🧩 A 9-Zone Grid
+Every card has 9 zones - 3 rows × 3 columns. Put as many items as you like into any zone, and they'll stack neatly.
 
-### 🧠 Intelligent Fit Mode
-Beyond the standard Cover / Contain / Fill, an **Intelligent** fit mode reduces or eliminates the letterbox bars that Contain leaves around mismatched aspect ratios — using a small, bounded amount of zoom and stretch, tuned by you, falling back cleanly to plain Contain whenever a photo's proportions are too different to fix without it looking wrong (a true portrait photo on a landscape screen, for example).
+### 🎯 Two Kinds of Items
+Show a live entity (icon and/or state), or write a Jinja2 template for anything else - a custom string, a calculation, a combination of sensors.
 
-### 🎛️ 9-Zone Overlay Grid
-Top/Middle/Bottom × Left/Center/Right — nine independent zones. Each zone has two settings of its own: whether it stays fixed on screen (**Static**) or transitions together with the photo (**Dynamic**), and how multiple items stacked in that zone align relative to each other (**Alignment**) — independent of which corner or edge the zone itself sits at.
+### 🎨 Style Every Item Individually
+Font, size, weight, color, background, padding, margins, border radius, and a full text-shadow/stroke system. Every item can look completely different from the next.
 
-### 📊 Live Jinja2 Template Items, Photo-Aware
-Template items evaluate any Jinja2 expression in real time via WebSocket, exactly like a template sensor. Photo-specific fields (filename, EXIF data, and similar) are resolved client-side before the template is even sent to Home Assistant — so a clock or a filename label never opens a subscription it doesn't need.
+### 📍 Fine-Tune Every Zone
+Each zone has its own alignment and X/Y offset, so you can nudge a group of items exactly where you want them, right down to the pixel.
 
-### 🎨 Full Per-Item Styling, Including Shadow and Stroke
-Every item gets font color/size/weight/line-height, background color, border radius, and padding — plus a full text-shadow and stroke system, so light-colored text stays legible over light-colored photos without guesswork.
+### 👆 Every Gesture, Every Direction
+Tap, hold, double-tap, and swipe in all 4 directions - each one can trigger its own action, on the card or on an individual item.
 
-### 👆 Tap, Hold, Double-Tap, and Swipe
-Tap pauses and resumes the slideshow with an on-screen indicator. Swipe left/right moves between photos. Hold, double-tap, and swipe up/down are yours to assign to anything Home Assistant's action system supports — kiosk-mode toggling is a common use, but the card has no opinion on what they do.
+### 🌙 Ambient-Light Dimmer
+Got a wall-mounted tablet that's too bright at night? Link a lux sensor and the card dims itself automatically, with a curve you control.
 
-### ✏️ Full Visual Editor
-Card-wide settings, the 9-zone grid, and every item's styling are configurable through the Lovelace UI editor — no YAML required for the everyday case.
+### 🎛️ Full Visual Editor
+Add items, style them, and position zones, all without touching YAML.
 
 ---
 
@@ -90,20 +82,18 @@ Card-wide settings, the 9-zone grid, and every item's styling are configurable t
 1. Open **HACS** in your Home Assistant instance.
 2. Navigate to **Frontend** and click the three-dot menu in the top right corner.
 3. Select **Custom repositories**.
-4. Enter `https://github.com/rob-vandenberg/chrono-slideshow-card` and select **Lovelace** as the category.
+4. Enter `https://github.com/rob-vandenberg/chrono-tile-card` and select **Lovelace** as the category.
 5. Click **Add**. The repository will appear in the list.
-6. Search for `Chrono Slideshow Card` and click **Download**.
+6. Search for `Chrono Tile Card` and click **Download**.
 7. Reload your browser.
-
-Make sure [chrono_folder](https://github.com/rob-vandenberg/chrono_folder) is installed and has at least one folder watcher configured — this card needs a `sensor.` entity created by it.
 
 ### Manual Installation
 
-1. Download `chrono-slideshow-card.js` from the [latest release](https://github.com/rob-vandenberg/chrono-slideshow-card/releases/latest).
+1. Download `chrono-tile-card.js` from the [latest release](https://github.com/rob-vandenberg/chrono-tile-card/releases/latest).
 2. Copy it to your Home Assistant `config/www/` folder.
 3. In Home Assistant, go to **Settings → Dashboards → Resources**.
 4. Click **Add Resource**.
-5. Enter `/local/chrono-slideshow-card.js` as the URL and select **JavaScript Module**.
+5. Enter `/local/chrono-tile-card.js` as the URL and select **JavaScript Module**.
 6. Click **Create** and reload your browser.
 
 ---
@@ -112,221 +102,142 @@ Make sure [chrono_folder](https://github.com/rob-vandenberg/chrono_folder) is in
 
 ### Via HACS
 1. Open **HACS → Frontend**.
-2. Find **Chrono Slideshow Card** and click the three-dot menu.
+2. Find **Chrono Tile Card** and click the three-dot menu.
 3. Select **Remove**.
 4. Reload your browser.
 
 ### Manual
-1. Delete `chrono-slideshow-card.js` from `config/www/`.
+1. Delete `chrono-tile-card.js` from `config/www/`.
 2. Remove the resource entry from **Settings → Dashboards → Resources**.
+3. Remove any cards using `chrono-tile-card` from your dashboards.
 
 ---
 
-<img src="art/editor.png" width="800" alt="Chrono Slideshow Card Editor">
+<img src="art/tile-card.png" alt="Chrono Tile Card showing entity and template items">
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ Usage
+
+### Adding the Card
+
+1. Open a dashboard and click **Edit Dashboard**.
+2. Click **Add Card**.
+3. Search for **Chrono Tile Card**.
+4. Click **+ Add entity** or **+ Add template** to add your first item.
+5. Pick a zone for it, then style it however you like.
+
+<img src="art/tile-editor.png" alt="Chrono Tile Card visual editor">
+
+If you'd rather write YAML directly, here's a small example with one entity item and one template item:
+
+```yaml
+type: custom:chrono-tile-card
+background_color: "#000000"
+items:
+  - entity: sensor.living_room_temperature
+    vertical: top
+    horizontal: left
+    show_icon: true
+    show_state: true
+    font_size: 1.2
+    font_color: "#FFFFFF"
+  - template: '{{ now().strftime("%H:%M") }}'
+    vertical: bottom
+    horizontal: right
+    font_family: "DSEG7 Classic"
+    font_size: 2
+    font_color: "#00FF00"
+```
 
 ### Card Options
 
-These properties apply to the entire card. Everything in this table has a dedicated field in the visual editor unless noted otherwise.
+These go at the top level of the card config.
 
-| Property | Type | Default | Description |
+| Key | Type | Default | What it does |
 | :--- | :--- | :--- | :--- |
-| `entity` | string | required | The `chrono_folder` sensor to display. The editor's combobox is populated only with entities actually created by chrono_folder. |
-| `sort_by` | string | `filename` | `filename`, `filedatetime`, `exifdatetime`, or `random` (a true shuffle — every photo appears exactly once per pass, re-shuffled only when the photo list reloads, not on every lap) |
-| `sort_reverse` | boolean | `false` | Reverse the sort order |
-| `display_time` | number | `8` | Seconds each photo is shown before advancing |
-| `transition` | string | `fade` | `none`, `fade`, `slide-left`, `slide-right`, `slide-up`, `slide-down`, `curtain`, `clock`, or `random` |
-| `transition_duration` | number | `0.6` | Seconds the transition animation itself takes |
-| `fit_mode` | string | `contain` | `cover`, `contain`, `fill`, or `intelligent` (see [Key Features](#-intelligent-fit-mode)) |
-| `zone_modes` | object | see below | Per-zone Static/Dynamic — set via the **Zones configuration** panel |
-| `zone_alignment` | object | see below | Per-zone Left/Center/Right internal alignment — set via the **Zones configuration** panel |
-| `items` | list | `[]` | Overlay items — added via the **Items configuration** panel |
+| `background_color` | color | `#000000` | The card's flat background color. |
+| `items` | list | `[]` | The entity and template items placed on the card. See [Item Options](#item-options). |
+| `zone_alignment` | map | see below | How items stack within each zone: `left`, `center`, or `right`. Keyed by zone, e.g. `top-left`. Defaults to matching each zone's own column. |
+| `zone_offset_x` | map | see below | How far each zone shifts horizontally, in pixels. Positive is right, negative is left. |
+| `zone_offset_y` | map | see below | How far each zone shifts vertically, in pixels. Positive is up, negative is down. |
+| `tap_action` | action | more-info* | What happens when you tap the card itself (not an item). |
+| `hold_action` | action | (none) | What happens when you press and hold the card. |
+| `double_tap_action` | action | (none) | What happens when you tap the card twice quickly. |
+| `swipe_up_action` | action | (none) | What happens when you swipe up on the card. |
+| `swipe_down_action` | action | (none) | What happens when you swipe down on the card. |
+| `swipe_left_action` | action | (none) | What happens when you swipe left on the card. |
+| `swipe_right_action` | action | (none) | What happens when you swipe right on the card. |
 
-Several settings are deliberately YAML-only, with no dedicated field — see [Advanced: YAML-only Options](#advanced-yaml-only-options).
+\* Only applies when the tap lands on empty space, not on an item - items resolve their own tap action first.
+
+`zone_alignment`, `zone_offset_x`, and `zone_offset_y` are each keyed by zone name: `top-left`, `top-center`, `top-right`, `middle-left`, `middle-center`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right`. You won't normally need to edit these directly - the editor's zone controls handle it for you.
+
+### Item Options
+
+Each entry in `items` is either an entity item (has an `entity` key) or a template item (has a `template` key).
+
+| Key | Type | Default | What it does |
+| :--- | :--- | :--- | :--- |
+| `entity` | text | - | The entity to show. Entity items only. |
+| `template` | text | - | A Jinja2 template, e.g. `{{ states("sensor.temp") }}`. Template items only. |
+| `show` | `true`/`false` | `true` | Shows or hides this item. |
+| `vertical` | text | `middle` | Which row: `top`, `middle`, or `bottom`. |
+| `horizontal` | text | `center` | Which column: `left`, `center`, or `right`. |
+| `show_icon` | `true`/`false` | `true` | Shows the entity's icon. Entity items only. |
+| `icon` | text | (none) | Overrides the entity's default icon. Entity items only. |
+| `icon_size` | number | `24` | Icon size, in pixels. Entity items only. |
+| `show_state` | `true`/`false` | `false` | Shows the entity's state as text. Entity items only. |
+| `attribute` | text | (none) | Shows this attribute instead of the entity's state. Entity items only. |
+| `prefix` / `suffix` | text | (none) | Text added before/after the attribute value. Entity items only. |
+| `font_color` | color | `#FFFFFF` | Text (and icon) color. |
+| `font_family` | text | `DSEG7 Classic` | Pick from a curated list of fonts in the editor, including two segmented "digital clock" styles. |
+| `font_size` | number | `1` | Font size, in `em`. |
+| `font_weight` | number | `400` | Font weight (100-900). |
+| `line_height` | number | (theme default) | Line height. |
+| `background_color` | color | (none) | Background color behind the item. |
+| `border_radius` | number | (none) | Corner rounding, in pixels. |
+| `padding_horizontal` / `padding_vertical` | number | (none) | Inner spacing around the item's content. |
+| `margin_top` / `margin_bottom` | number | (none) | Spacing between this item and its neighbors in the same zone. |
+| `text_shadow_color` | color | (none) | Enables a text shadow when set. |
+| `text_shadow_blur` | number | (none) | Shadow blur radius. |
+| `text_shadow_offset_x` / `text_shadow_offset_y` | number | (none) | Shadow offset. |
+| `text_shadow_stroke_width` | number | (none) | Adds an outline stroke around the text, independent of the shadow. |
+| `tap_action` | action | more-info** | What happens when you tap this item. |
+| `hold_action` | action | (none) | What happens when you press and hold this item. |
+| `double_tap_action` | action | (none) | What happens when you tap this item twice quickly. |
+
+\** Entity items open the more-info dialog by default, matching Home Assistant's own cards. Set `tap_action: { action: none }` to turn this off. Template items have no default tap action.
+
+Using a key that isn't in this list, or a value that isn't valid, won't break the card - it's just ignored.
+
+### Gestures and Actions
+
+The card recognizes tap, hold, double-tap, and swipe (in all 4 directions), both on individual items and on the card as a whole. Any of Home Assistant's standard actions can be used - `more-info`, `navigate`, `call-service`, `toggle`, `url`, `none`, and so on.
+
+Swipes are always read from the whole card, no matter which item they start on - useful as a "next/previous" or navigation gesture that doesn't interfere with tapping items underneath.
+
+### The Ambient Dimmer
+
+Turn on `dimmer_enabled` and pick a lux sensor with `dimmer_entity`, and the card overlays a semi-transparent layer that darkens as the room gets darker.
+
+| Key | Type | Default | What it does |
+| :--- | :--- | :--- | :--- |
+| `dimmer_enabled` | `true`/`false` | `false` | Turns the dimmer on or off. |
+| `dimmer_entity` | text | (none) | The lux (illuminance) sensor to read. |
+| `dimmer_color` | color | `#000000` | The dimmer overlay's color. |
+| `dimmer_lux_min` / `dimmer_lux_max` | number | `0` / `40` | The lux range the dimmer reacts to. Below the minimum, opacity is at its maximum; above the maximum, opacity is at its minimum. |
+| `dimmer_opacity_min` / `dimmer_opacity_max` | number (%) | `0` / `80` | The opacity range the dimmer can move between. |
+| `dimmer_aggressiveness` | number (%) | `50` | How sharply the dimmer reacts across the lux range. `50` is a natural, human-eye-like curve; lower values react more gently, higher values react more sharply. |
 
 ---
 
-### Zone Options
+## ⚠️ Limitations
 
-`zone_modes` and `zone_alignment` are each an object keyed by zone name: `top-left`, `top-center`, `top-right`, `middle-left`, `middle-center`, `middle-right`, `bottom-left`, `bottom-center`, `bottom-right`.
-
-| Setting | Values | Default | Description |
-| :--- | :--- | :--- | :--- |
-| Transition (mode) | `static`, `dynamic` | `dynamic` for the middle row, `static` everywhere else | Whether the zone's items stay fixed on screen during a transition, or move with the photo |
-| Alignment | `left`, `center`, `right` | matches the zone's own column | How multiple items stacked in this zone align relative to each other |
-
-```yaml
-zone_modes:
-  top-left: static
-  top-center: static
-  top-right: static
-  middle-left: dynamic
-  middle-center: dynamic
-  middle-right: dynamic
-  bottom-left: static
-  bottom-center: static
-  bottom-right: dynamic
-zone_alignment:
-  top-left: left
-  top-center: center
-  top-right: right
-  middle-left: left
-  middle-center: center
-  middle-right: right
-  bottom-left: left
-  bottom-center: center
-  bottom-right: right
-```
-
----
-
-### Item Options (Shared)
-
-Every item — entity or template — supports the following.
-
-| Property | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `horizontal` | string | `center` | Which column zone the item belongs to: `left`, `center`, `right` |
-| `vertical` | string | `middle` | Which row zone the item belongs to: `top`, `middle`, `bottom` |
-| `show` | boolean | `true` | Show or hide the item without removing it |
-| `font_color` | string | `''` | Text color |
-| `font_size` | number | `1.2` | Font size, in em |
-| `font_weight` | number | `600` | Font weight |
-| `line_height` | number | `1.2` | Line height |
-| `border_radius` | number | `50` | Border radius in px — only visible if `background_color` is also set |
-| `background_color` | string | `''` | Background color behind the item |
-| `padding_top` / `padding_bottom` / `padding_left` / `padding_right` | number | `10` each | Padding in px |
-| `text_shadow_color` | string | `''` | Shadow/stroke color — accepts 8-digit hex with alpha (e.g. `#000000AA`). No shadow or stroke renders at all unless this is set. |
-| `text_shadow_blur` | number | `0` | Shadow blur radius in px |
-| `text_shadow_offset_x` / `text_shadow_offset_y` | number | `0` each | Shadow offset in px — negative values are valid |
-| `text_shadow_stroke_width` | number | `0` | Outline width in px, drawn in the same color as the shadow |
-
----
-
-### Entity Item Options
-
-| Property | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `entity` | string | required | Entity ID to track |
-| `icon` | string | `''` | MDI icon override |
-| `show_state` | boolean | `false` | Show the entity's state alongside the icon |
-
----
-
-### Template Item Options
-
-| Property | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `template` | string | required | A Jinja2 template, e.g. `{{ now().strftime('%H:%M') }}` |
-
-Templates can reference the current photo's own data directly as bare `{{ }}` variables — for example `{{ fileName }}` or `{{ exifModel }}` — resolved before the template ever reaches Home Assistant. If every `{{ }}` block in a template resolves this way, no live state subscription opens at all. The exact set of available photo fields depends on what your chrono_folder sensor provides.
-
----
-
-### Advanced: YAML-only Options
-
-These have no dedicated field in the visual editor — open the card's **Show code editor** view to set them. This isn't a limitation so much as a deliberate choice: these are settings most people configuring the card will rarely if ever touch, so they don't take up space in the everyday editor.
-
-**Card-level:**
-
-| Property | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `letterbox_color` | string | `#000000` | Fills any gap left by `contain` or a partially-resolved `intelligent` result |
-| `maxZoom` | number | `0.12` | `intelligent` fit mode only — maximum uniform zoom/crop allowed, as a fraction (`0.12` = 12%) |
-| `maxStretch` | number | `0.08` | `intelligent` fit mode only — maximum non-uniform stretch allowed, as a fraction |
-| `maxGap` | number | `0` | `intelligent` fit mode only — largest tolerable leftover letterbox fraction before falling back to plain `contain` entirely |
-| `hold_action` | action | — | Fires on a long press anywhere on the card |
-| `double_tap_action` | action | — | Fires on a double-tap anywhere on the card |
-| `swipe_up_action` | action | — | Fires on an upward swipe |
-| `swipe_down_action` | action | — | Fires on a downward swipe |
-
-**Item-level:**
-
-| Property | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `text_shadow_layers` | number | `2` | Stacks the same shadow this many times — darkens it without changing the blur radius or shape, since stacking layers compounds differently than just raising alpha once |
-
----
-
-## 👆 Gestures
-
-| Gesture | Behavior | Configurable? |
-| :--- | :--- | :--- |
-| Tap | Pause / resume, with an on-screen indicator | No — hardcoded |
-| Swipe left / right | Next / previous photo | No — hardcoded |
-| Hold | Runs `hold_action` | Yes |
-| Double-tap | Runs `double_tap_action` | Yes |
-| Swipe up | Runs `swipe_up_action` | Yes |
-| Swipe down | Runs `swipe_down_action` | Yes |
-
-The four configurable gestures accept any standard Home Assistant action (`navigate`, `call-service` / `perform-action`, `more-info`, `fire-dom-event`, `url`, `toggle`, `none`, etc.) — exactly the same action system used by built-in HA cards. A common use is toggling kiosk-mode dashboards on or off:
-
-```yaml
-swipe_up_action:
-  action: fire-dom-event
-  navigate: https://your-ha-url/your-dashboard
-swipe_down_action:
-  action: fire-dom-event
-  navigate: https://your-ha-url/your-dashboard?disable_km
-```
-
----
-
-## 📄 Examples
-
-### Clock and date overlay, intelligent fit, kiosk-mode swipes
-
-```yaml
-type: custom:chrono-slideshow-card
-entity: sensor.slideshow_living_room
-sort_by: random
-display_time: 8
-transition: random
-transition_duration: 1.5
-fit_mode: intelligent
-swipe_up_action:
-  action: fire-dom-event
-  navigate: https://your-ha-url/dashboard-tablet/slideshow
-swipe_down_action:
-  action: fire-dom-event
-  navigate: https://your-ha-url/dashboard-tablet/slideshow?disable_km
-zone_alignment:
-  bottom-left: center
-items:
-  - horizontal: left
-    vertical: bottom
-    template: "{{ now().strftime('%H:%M') }}"
-    font_size: 3.5
-    font_weight: 300
-    text_shadow_color: "#00000088"
-    text_shadow_blur: 8
-  - horizontal: left
-    vertical: bottom
-    template: "{{ now().strftime('%A, %d %B %Y') }}"
-    font_size: 0.9
-    font_weight: 300
-    text_shadow_color: "#000000"
-    text_shadow_blur: 8
-  - horizontal: right
-    vertical: bottom
-    template: "{{ fileName }}"
-    font_color: "#FFFFFF"
-    font_size: 0.9
-    text_shadow_color: "#000000"
-    text_shadow_blur: 1
-    text_shadow_offset_x: 1
-    text_shadow_offset_y: 1
-```
-
-### Minimal — just the photos
-
-```yaml
-type: custom:chrono-slideshow-card
-entity: sensor.slideshow_living_room
-```
+- Template items are re-evaluated by Home Assistant like any other Jinja2 template - very complex templates on many items at once may add some load to your instance.
+- The dimmer needs a real lux sensor. Without `dimmer_entity` set, it stays off even if `dimmer_enabled` is `true`.
+- There's no photo or slideshow background - only a flat background color. For a full-screen photo display, use a different card alongside this one.
+- The DSEG "digital clock" fonts and Google Fonts are loaded from a CDN. Without an internet connection, items using them will fall back to the browser's default font.
 
 ---
 
@@ -346,4 +257,4 @@ Copyright © 2026 Rob Vandenberg. All rights reserved.
 
 If you find this project useful and wish to support its continued development, please consider a contribution.
 
-[![](https://img.shields.io/badge/Buy_Me_A_Coffee-Support-yellow.svg?style=for-the-badge)](https://www.buymeacoffee.com/)
+[![](https://img.shields.io/badge/Buy_Me_A_Coffee-Support-yellow.svg?style=for-the-badge)](https://www.buymeacoffee.com/robvandenberg)
