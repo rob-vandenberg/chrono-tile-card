@@ -5,12 +5,27 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.1.14';
+const CARD_VERSION = '1.1.15';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.1.15: Fix: entity state label ignored item.font_size — .entity-state-label
+//          had its own hardcoded font-size (10px * scale-factor), which always
+//          wins over an inherited value regardless of selector specificity, so
+//          the label's font-size never actually came from item.font_size on
+//          the parent .overlay-entity-item. Removed the hardcoded rule; the
+//          label now inherits font-size like every other typography property.
+//          New per-item icon_size field (entity items only, default 24 —
+//          matches the value it replaces), driving --mdc-icon-size inline on
+//          <ha-state-icon> itself (previously a fixed 24px in a static CSS
+//          rule, now removed). Editor: new item-icon-row places "Icon size"
+//          field in the same 19fr 8fr 8fr 8fr 8fr grid template used by
+//          item-typography/item-bg-color-padding/item-text-shadow, with Icon
+//          spanning columns 1-4 (grid-column: span 4) so Icon size lands in
+//          the same last-column position as Border radius/Bottom margin/
+//          Stroke width, aligning vertically across all four rows.
 // v1.1.14: New per-item show_icon toggle (entity items only), default true —
 //          preserves existing always-shown behavior for configs predating
 //          this field. Editor: "Show icon" toggle added next to "Show
@@ -226,6 +241,7 @@ const DEFAULT_ITEM = {
   horizontal:       'center',
   vertical:         'middle',
   icon:             '',
+  icon_size:        24,
   show_icon:        true,
   show_state:       false,
   font_color:       '#FFFFFF',
@@ -1575,10 +1591,11 @@ class ChronoTileCardEditor extends LitElement {
                     }
                   </div>
 
-                  <!-- Entity-only: icon override -->
+                  <!-- Entity-only: icon override + icon size -->
                   ${isEntity ? html`
-                    <div class="item-content-row">
+                    <div class="item-icon-row">
                       ${ctTextField('Icon', item.icon ?? '', e => this._itemChanged(index, 'icon', e))}
+                      ${ctTextField('Icon size', item.icon_size ?? '', e => this._itemChanged(index, 'icon_size', e), { type: 'number', step: '1', min: '0' })}
                     </div>
                   ` : ''}
 
@@ -1696,6 +1713,17 @@ class ChronoTileCardEditor extends LitElement {
       gap: 8px;
       align-items: end;
       margin-bottom: 8px;
+    }
+
+    .item-icon-row {
+      display: grid;
+      grid-template-columns: 19fr 8fr 8fr 8fr 8fr;
+      gap: 8px;
+      align-items: end;
+      margin-bottom: 8px;
+    }
+    .item-icon-row > :first-child {
+      grid-column: span 4;
     }
 
     .item-toggles-row {
@@ -2546,6 +2574,7 @@ class ChronoTileCard extends LitElement {
               .hass=${this._hass}
               .stateObj=${stateObj}
               .icon=${item.icon || undefined}
+              style="--mdc-icon-size: calc(${item.icon_size ?? DEFAULT_ITEM.icon_size}px * var(--scale-factor, 1));"
             ></ha-state-icon>
           ` : ''}
           ${item.show_state ? html`<span class="entity-state-label">${stateLabel}</span>` : ''}
@@ -2674,12 +2703,8 @@ class ChronoTileCard extends LitElement {
       cursor: pointer;
       min-width: calc(40px * var(--scale-factor, 1));
     }
-    .overlay-entity-item ha-state-icon {
-      --mdc-icon-size: calc(24px * var(--scale-factor, 1));
-    }
     .entity-state-label {
       display: block;
-      font-size: calc(10px * var(--scale-factor, 1));
       text-align: center;
       white-space: nowrap;
       overflow: hidden;
