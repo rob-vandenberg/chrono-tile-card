@@ -5,12 +5,44 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '2.0.18';
+const CARD_VERSION = '2.0.19';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v2.0.19: Removed the entire --scale-factor system (REFERENCE_HEIGHT_PX,
+//          the updated()/ResizeObserver mechanism, every calc(...*
+//          var(--scale-factor,1)) in CSS and inline styles). Inherited from
+//          chrono-slideshow-card, where full-screen displays of varying
+//          physical size plausibly justified scaling text/icons proportional
+//          to actual rendered height — but it was carried into tile-card
+//          before slideshow's real fix for its original problem (editor
+//          preview collapsing to zero height) existed, and tile-card's own
+//          use case (a small tile embedded in an ordinary dashboard grid,
+//          not a full-screen display) never needed it. Confirmed via live
+//          diagnostic data this session that a real dashboard instance
+//          (500x100px) and the editor preview (much taller, near-square)
+//          produced wildly different scale-factors (0.245 vs near 1.0) for
+//          the same configured font_size/icon_size — configuring "60px"
+//          rendered ~15px on the real card and ~60px in the editor preview.
+//          Root confusion this whole session traced to: two unrelated
+//          problems had been solved by one bundled mechanism. The actual
+//          editor-preview-collapse problem is solved independently by
+//          EDITOR_PREVIEW_ASPECT_RATIO + the --editor-preview-height/
+//          --editor-preview-aspect-ratio CSS variables (v1.0.2/v1.0.3),
+//          which give the preview a real non-zero height via CSS
+//          aspect-ratio — confirmed unaffected by this change, left
+//          untouched. font_size/icon_size/padding/margin/border_radius/
+//          text_shadow/zone offsets/zone gap are now literal px/em values,
+//          identical between editor preview and real dashboard (WYSIWYG).
+//          BREAKING for existing configs: any item tuned under the old
+//          proportional scaling will render at a different absolute size
+//          now (larger on typical small tiles, since the old shrink factor
+//          — usually well under 1.0 — no longer applies). Confirmed
+//          acceptable by user; existing configs are expected to need
+//          re-tuning. pxScaled/emScaled renamed to pxValue/emValue (no
+//          longer scale anything, old names would be misleading).
 // v2.0.18: Full rewrite of entity-item display and interaction — not a patch
 //          on v1.1.17's bugs, a redesign. Root problem across all of this
 //          session's earlier fixes: styling meant for the label was applied
@@ -390,13 +422,6 @@ const DEFAULT_ZONE_OFFSET_Y = {
   'bottom-right':  12,
 };
 
-// Reference card height (px) at which a font_size value renders at its
-// literal em size (scale factor 1). This is the fixed height the HA card
-// editor uses when no real dashboard parent constrains the preview. Any
-// other rendered height (dashboard or otherwise) scales proportionally from
-// this baseline via ResizeObserver — see the card's connectedCallback.
-const REFERENCE_HEIGHT_PX = 400;
-
 // Aspect ratio (CSS <ratio> syntax, e.g. '16 / 10') applied to ha-card, but
 // ONLY when the card is rendered inside the HA edit-card dialog's preview —
 // never on the real dashboard.
@@ -728,8 +753,8 @@ function handleAction(node, hass, config, action) {
 
 // ─── Shared value-scaling helpers for per-item styling ─────────────────────────
 // Used by both _itemContainerStyleMap and _itemTextStyleMap.
-const pxScaled = v => (v !== '' && v != null) ? `calc(${v}px * var(--scale-factor, 1))` : undefined;
-const emScaled = v => (v !== '' && v != null) ? `calc(${v}em * var(--scale-factor, 1))` : undefined;
+const pxValue = v => (v !== '' && v != null) ? `${v}px` : undefined;
+const emValue = v => (v !== '' && v != null) ? `${v}em` : undefined;
 const rawValue = v => (v !== '' && v != null) ? `${v}` : undefined;
 
 // ─── substituteCardVariables ────────────────────────────────────────────────────
@@ -2267,8 +2292,6 @@ class ChronoTileCard extends LitElement {
     this._touchStartX     = null;
     this._touchStartY     = null;
     this._pressedItem     = null;
-    this._resizeObserver  = null;
-    this._observedCardEl  = null; // which ha-card node the observer currently watches — re-attaches in updated() whenever this differs from the current one
   }
 
   set hass(hass) {
@@ -2326,53 +2349,9 @@ class ChronoTileCard extends LitElement {
     );
   }
 
-  // firstUpdated() runs exactly once, ever — insufficient here: render() has
-  // an empty (!this._config) branch before its one real content branch. If
-  // the very first render landed on the empty branch (no ha-card at all),
-  // firstUpdated() would find nothing, return early, and never fire again —
-  // leaving --scale-factor stuck forever, since nothing else ever sets it.
-  // updated() runs after every render, so it can detect the branch switch
-  // and re-attach; comparing against _observedCardEl keeps this a no-op on the
-  // overwhelming majority of renders where the branch didn't change.
-  // connectedCallback() cannot be used for the first attachment either:
-  // super.connectedCallback() only schedules the first render, it does not
-  // run it synchronously, so ha-card is provably absent from the shadow DOM
-  // at any point still inside connectedCallback(). Observing the host
-  // element instead (as a fallback) is not equivalent: on the dashboard the
-  // host's own height happens to match ha-card's, masking the bug, but in
-  // the editor dialog the host resolves to a real, distinct zero height
-  // (confirmed via direct measurement) while ha-card still gets a real
-  // height from its own aspect-ratio rule — two different elements with two
-  // different sizes, and the wrong one was being watched.
-  updated(changedProps) {
-    super.updated(changedProps);
-    const cardEl = this.shadowRoot?.querySelector('ha-card');
-    if (!cardEl || cardEl === this._observedCardEl) return;
-    this._resizeObserver?.disconnect();
-    this._observedCardEl = cardEl;
-    this._resizeObserver = new ResizeObserver(entries => {
-      const height = entries[0]?.contentRect?.height;
-      if (!height) return;
-      this.style.setProperty('--scale-factor', height / REFERENCE_HEIGHT_PX);
-    });
-    this._resizeObserver.observe(cardEl);
-  }
-
   disconnectedCallback() {
     super.disconnectedCallback();
     this._teardownSubscriptions();
-    // Clearing both, not just disconnecting: the guard in updated() only
-    // compares cardEl === this._observedCardEl — it has no way to know the
-    // observer behind that node was just killed. A rapid disconnect/
-    // reconnect landing on the same ha-card node (same component instance,
-    // node identity preserved) would otherwise leave the guard believing a
-    // now-dead observer is still valid, permanently skipping re-attachment
-    // and leaving --scale-factor stuck unset — confirmed as a real failure
-    // mode via debug logging on chrono-slideshow-card (v1.1.51), same
-    // updated()/_observedCardEl mechanism, applied here unchanged.
-    this._resizeObserver?.disconnect();
-    this._resizeObserver = null;
-    this._observedCardEl = null;
   }
 
   // ── Template/entity subscriptions for overlay items ─────────────────────
@@ -2614,14 +2593,14 @@ class ChronoTileCard extends LitElement {
   // and text directly to .entity-state-label (and to the icon's own color).
   _itemContainerStyleMap(item) {
     return {
-      'border-radius':    pxScaled(item.border_radius),
+      'border-radius':    pxValue(item.border_radius),
       'background-color': item.background_color || undefined,
-      'padding-top':      pxScaled(item.padding_vertical),
-      'padding-bottom':   pxScaled(item.padding_vertical),
-      'padding-left':     pxScaled(item.padding_horizontal),
-      'padding-right':    pxScaled(item.padding_horizontal),
-      'margin-top':       pxScaled(item.margin_top),
-      'margin-bottom':    pxScaled(item.margin_bottom),
+      'padding-top':      pxValue(item.padding_vertical),
+      'padding-bottom':   pxValue(item.padding_vertical),
+      'padding-left':     pxValue(item.padding_horizontal),
+      'padding-right':    pxValue(item.padding_horizontal),
+      'margin-top':       pxValue(item.margin_top),
+      'margin-bottom':    pxValue(item.margin_bottom),
     };
   }
 
@@ -2636,15 +2615,15 @@ class ChronoTileCard extends LitElement {
       'color':            item.font_color       || undefined,
       'font-family':      (fontOpt ? fontOpt.family : item.font_family) || undefined,
       'font-style':       fontOpt?.italic ? 'italic' : undefined,
-      'font-size':        emScaled(item.font_size),
+      'font-size':        emValue(item.font_size),
       'font-weight':      rawValue(item.font_weight),
       'line-height':      rawValue(item.line_height),
       'text-shadow':              (item.text_shadow_color && item.text_shadow_offset_x !== '' && item.text_shadow_offset_y !== '')
         ? Array(Math.max(1, Number(item.text_shadow_layers ?? 2) || 1))
-            .fill(`${pxScaled(item.text_shadow_offset_x ?? 0)} ${pxScaled(item.text_shadow_offset_y ?? 0)} ${pxScaled(item.text_shadow_blur ?? 0)} ${item.text_shadow_color}`)
+            .fill(`${pxValue(item.text_shadow_offset_x ?? 0)} ${pxValue(item.text_shadow_offset_y ?? 0)} ${pxValue(item.text_shadow_blur ?? 0)} ${item.text_shadow_color}`)
             .join(', ')
         : undefined,
-      '-webkit-text-stroke-width': item.text_shadow_color ? pxScaled(item.text_shadow_stroke_width ?? 0) : undefined,
+      '-webkit-text-stroke-width': item.text_shadow_color ? pxValue(item.text_shadow_stroke_width ?? 0) : undefined,
       '-webkit-text-stroke-color': item.text_shadow_color || undefined,
     };
   }
@@ -2719,7 +2698,7 @@ class ChronoTileCard extends LitElement {
               .hass=${this._hass}
               .stateObj=${stateObj}
               .icon=${item.icon || undefined}
-              style="--mdc-icon-size: calc(${item.icon_size ?? DEFAULT_ITEM.icon_size}px * var(--scale-factor, 1)); color: ${item.font_color || 'inherit'};"
+              style="--mdc-icon-size: ${item.icon_size ?? DEFAULT_ITEM.icon_size}px; color: ${item.font_color || 'inherit'};"
             ></ha-state-icon>
           ` : ''}
           ${item.show_state ? html`<span class="entity-state-label" style=${styleMap(textStyle)}>${stateLabel}</span>` : ''}
@@ -2749,7 +2728,7 @@ class ChronoTileCard extends LitElement {
     return html`
       <div
         class="overlay-zone overlay-zone-align-${alignment}"
-        style="transform: translate(calc(${offsetX}px * var(--scale-factor, 1)), calc(${cssOffsetY}px * var(--scale-factor, 1)));"
+        style="transform: translate(${offsetX}px, ${cssOffsetY}px);"
       >
         ${items.map(item => this._renderItem(item))}
       </div>
@@ -2826,7 +2805,7 @@ class ChronoTileCard extends LitElement {
     .overlay-zone {
       display: flex;
       flex-direction: column;
-      gap: calc(4px * var(--scale-factor, 1));
+      gap: 4px;
       pointer-events: auto;
     }
     .overlay-zone-align-left   { align-items: flex-start; text-align: left;   }
