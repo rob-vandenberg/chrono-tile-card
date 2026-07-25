@@ -5,12 +5,71 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.1.16';
+const CARD_VERSION = '2.0.18';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v2.0.18: Full rewrite of entity-item display and interaction — not a patch
+//          on v1.1.17's bugs, a redesign. Root problem across all of this
+//          session's earlier fixes: styling meant for the label was applied
+//          to its container and left to cascade through inheritance, which
+//          repeatedly lost to hardcoded rules on the actual target element.
+//          _itemStyleMap() is removed, replaced by _itemContainerStyleMap()
+//          (background/padding/margin/border-radius) and _itemTextStyleMap()
+//          (color/font/size/weight/line-height/shadow/stroke) — template
+//          items merge both onto their single node (unchanged visually);
+//          entity items apply container to .overlay-entity-item and text
+//          directly to .entity-state-label, and the icon now gets its own
+//          explicit color from item.font_color rather than relying on
+//          inheritance (ha-state-icon may still override with its own
+//          domain-state coloring — untested live).
+//          .entity-state-label: removed the hardcoded max-width/overflow/
+//          ellipsis (96px, unexplained, present since v1.0.0) — text now
+//          protrudes past its zone on overflow instead of truncating,
+//          matching user's explicit decision; wrapping may be added as an
+//          opt-in toggle later.
+//          .overlay-entity-item: removed hardcoded min-width:40px (present
+//          since v1.0.0, no config field ever justified it) and unconditional
+//          cursor:pointer (now only applied via shared .clickable class when
+//          the item actually resolves to an action).
+//          Interaction: removed per-item @click entirely (both item types).
+//          Root cause of "tapping an item does nothing": TWO independent
+//          gesture systems were colliding — the card-level pointer-capture
+//          state machine (originally built only for swipe, which HA has no
+//          native equivalent for) was intercepting every tap on the whole
+//          card, including taps landing on items with their own separate
+//          @click listeners. Collapsed to one system: the existing pointer
+//          state machine (_onPointerDown/Move/Up/Cancel) now resolves which
+//          item (if any) was under the initial press via a new
+//          _resolveActionItem()/data-item-index hit-test, and routes
+//          tap/hold/double-tap to that item's own action config instead of
+//          always the card's; double-tap now also requires both taps land on
+//          the same target. Swipe (all 4 directions) is unchanged — always
+//          card-wide regardless of what's underneath, confirmed as the
+//          deliberate kiosk-mode-escape mechanism, not a per-item concern.
+//          Also found and fixed a real bug while re-verifying this file's
+//          local handleAction(): unlike HA's own handleAction (which this
+//          function is a "faithful copy" of per its own comment), it had NO
+//          default fallback to more-info when tap_action was unset on an
+//          entity — every unconfigured action silently resolved to 'none'.
+//          This was asserted as already-correct earlier in this session
+//          without verifying the local implementation — that assertion was
+//          wrong; corrected here by adding the same default HA itself uses.
+//          New _itemIsActionable() decides the clickable-cursor affordance:
+//          entities default to actionable (more-info) unless tap_action is
+//          explicitly 'none'; templates have no default, only actionable if
+//          tap_action is explicitly configured — matching each type's actual
+//          default behavior.
+// v1.1.17: Revert v1.1.16. Confirmed (user-tested) that adding min-width:0/
+//          max-width:100% to .overlay-zone and .overlay-template-item made
+//          the wrapping bug worse, not better — text now wrapped at ~10% of
+//          available width instead of ~33%. Root cause not yet correctly
+//          identified; v1.1.16's hypothesis was wrong. Reverted both rules
+//          back to their v1.1.15 state pending real computed-width data from
+//          the browser (DevTools) rather than further static-code
+//          speculation.
 // v1.1.16: Fix (candidate — needs live confirmation): template text was
 //          wrapping far earlier than the 1/3-cell width it should have had
 //          available. .overlay-cell already had min-width:0 to opt out of
@@ -616,6 +675,11 @@ function handleAction(node, hass, config, action) {
     actionConfig = config.hold_action;
   } else if (action === 'tap' && config.tap_action) {
     actionConfig = config.tap_action;
+  } else if (action === 'tap' && config.entity) {
+    // HA's own default when tap_action is unset but an entity is present:
+    // open more-info. hold/double_tap have no such default in real HA either
+    // — they simply do nothing unless explicitly configured, same as here.
+    actionConfig = { action: 'more-info' };
   } else if (action === 'swipe_up' && config.swipe_up_action) {
     actionConfig = config.swipe_up_action;
   } else if (action === 'swipe_down' && config.swipe_down_action) {
@@ -661,6 +725,12 @@ function handleAction(node, hass, config, action) {
       break;
   }
 }
+
+// ─── Shared value-scaling helpers for per-item styling ─────────────────────────
+// Used by both _itemContainerStyleMap and _itemTextStyleMap.
+const pxScaled = v => (v !== '' && v != null) ? `calc(${v}px * var(--scale-factor, 1))` : undefined;
+const emScaled = v => (v !== '' && v != null) ? `calc(${v}em * var(--scale-factor, 1))` : undefined;
+const rawValue = v => (v !== '' && v != null) ? `${v}` : undefined;
 
 // ─── substituteCardVariables ────────────────────────────────────────────────────
 // Direct adaptation of chrono-slideshow-card's substitutePhotoVariables(), with
@@ -2192,9 +2262,11 @@ class ChronoTileCard extends LitElement {
     this._holdTimer       = null;
     this._holdFired       = false;
     this._lastTapTime     = 0;
+    this._lastTapTarget   = null;
     this._pendingTapTimer = null;
     this._touchStartX     = null;
     this._touchStartY     = null;
+    this._pressedItem     = null;
     this._resizeObserver  = null;
     this._observedCardEl  = null; // which ha-card node the observer currently watches — re-attaches in updated() whenever this differs from the current one
   }
@@ -2411,15 +2483,28 @@ class ChronoTileCard extends LitElement {
   //    all fire the same events). All 7 outcomes (tap, hold, double-tap, and
   //    4 swipe directions) are plain pass-throughs to the generic action
   //    system — none has any hardcoded behavior. ──────────────────────────
+  // ── Resolve which item (if any) a pointer event landed on ──────────────────
+  // Every rendered item carries data-item-index; .closest() finds the nearest
+  // one regardless of which inner element (icon, label) was actually hit.
+  // Returns null for a press on empty card background — callers fall back to
+  // this._config (card-level actions) in that case.
+  _resolveActionItem(e) {
+    const el = e.target.closest?.('[data-item-index]');
+    if (!el) return null;
+    const idx = Number(el.getAttribute('data-item-index'));
+    return this._config.items?.[idx] ?? null;
+  }
+
   _onPointerDown(e) {
     e.currentTarget.setPointerCapture(e.pointerId);
+    this._pressedItem = this._resolveActionItem(e);
     this._touchStartX = e.clientX;
     this._touchStartY = e.clientY;
     this._holdFired = false;
     if (this._holdTimer) clearTimeout(this._holdTimer);
     this._holdTimer = setTimeout(() => {
       this._holdFired = true;
-      this._handleAction(this._config, 'hold');
+      this._handleAction(this._pressedItem ?? this._config, 'hold');
     }, HOLD_MS);
   }
 
@@ -2427,13 +2512,17 @@ class ChronoTileCard extends LitElement {
     if (this._touchStartX === null) return;
     const dx = e.clientX - this._touchStartX;
     const dy = e.clientY - this._touchStartY;
+    const pressedItem = this._pressedItem;
     this._touchStartX = null;
     this._touchStartY = null;
+    this._pressedItem = null;
     if (this._holdTimer) { clearTimeout(this._holdTimer); this._holdTimer = null; }
 
     const horizontalSwipe = Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) >= Math.abs(dy);
     const verticalSwipe   = Math.abs(dy) >= SWIPE_THRESHOLD && Math.abs(dy) >  Math.abs(dx);
 
+    // Swipe is always card-wide (kiosk-mode escape hatch), never per-item —
+    // regardless of which item, if any, the gesture started on.
     if (horizontalSwipe) {
       if (!this._holdFired) this._handleAction(this._config, dx < 0 ? 'swipe_left' : 'swipe_right');
       return;
@@ -2445,24 +2534,32 @@ class ChronoTileCard extends LitElement {
     if (this._holdFired) return; // hold already handled this press/release
 
     // Neither swipe nor hold — single tap, or the second tap of a double-tap.
+    // Tap/hold/double-tap route to whichever item (if any) was actually
+    // pressed; a double-tap only counts if both taps landed on the same
+    // target, so quickly tapping two different items doesn't register as one
+    // double-tap on neither.
+    const target = pressedItem ?? this._config;
     const now = Date.now();
-    if (now - this._lastTapTime < DOUBLE_TAP_MS) {
+    if (now - this._lastTapTime < DOUBLE_TAP_MS && this._lastTapTarget === target) {
       this._lastTapTime = 0;
+      this._lastTapTarget = null;
       if (this._pendingTapTimer) { clearTimeout(this._pendingTapTimer); this._pendingTapTimer = null; }
-      this._handleAction(this._config, 'double_tap');
+      this._handleAction(target, 'double_tap');
       return;
     }
     this._lastTapTime = now;
+    this._lastTapTarget = target;
     if (this._pendingTapTimer) clearTimeout(this._pendingTapTimer);
     this._pendingTapTimer = setTimeout(() => {
       this._pendingTapTimer = null;
-      this._handleAction(this._config, 'tap');
+      this._handleAction(target, 'tap');
     }, DOUBLE_TAP_MS);
   }
 
   _onPointerCancel() {
     this._touchStartX = null;
     this._touchStartY = null;
+    this._pressedItem = null;
     if (this._holdTimer) { clearTimeout(this._holdTimer); this._holdTimer = null; }
   }
 
@@ -2507,11 +2604,28 @@ class ChronoTileCard extends LitElement {
     return opMax + (opMin - opMax) * Math.pow(t, 0.33 * aggr);
   }
 
-  // ── Item style map ────────────────────────────────────────────────────────
-  _itemStyleMap(item) {
-    const pxScaled = v => (v !== '' && v != null) ? `calc(${v}px * var(--scale-factor, 1))` : undefined;
-    const emScaled = v => (v !== '' && v != null) ? `calc(${v}em * var(--scale-factor, 1))` : undefined;
-    const raw      = v => (v !== '' && v != null) ? `${v}`   : undefined;
+  // ── Item style maps ───────────────────────────────────────────────────────
+  // Split by concern, applied directly to the element each concern affects —
+  // never relied on cascading through a wrapper that doesn't need it (that
+  // indirection is what silently broke font-size and icon-size earlier: a
+  // hardcoded rule on the actual target element always wins over an inherited
+  // value, regardless of specificity). Template items merge both maps onto
+  // their single node; entity items apply container to .overlay-entity-item
+  // and text directly to .entity-state-label (and to the icon's own color).
+  _itemContainerStyleMap(item) {
+    return {
+      'border-radius':    pxScaled(item.border_radius),
+      'background-color': item.background_color || undefined,
+      'padding-top':      pxScaled(item.padding_vertical),
+      'padding-bottom':   pxScaled(item.padding_vertical),
+      'padding-left':     pxScaled(item.padding_horizontal),
+      'padding-right':    pxScaled(item.padding_horizontal),
+      'margin-top':       pxScaled(item.margin_top),
+      'margin-bottom':    pxScaled(item.margin_bottom),
+    };
+  }
+
+  _itemTextStyleMap(item) {
     // item.font_family stores a FONT_OPTIONS dropdown value, which may differ
     // from the actual CSS font-family name (italic entries share their
     // upright counterpart's family, distinguished only by font-style). A
@@ -2523,16 +2637,8 @@ class ChronoTileCard extends LitElement {
       'font-family':      (fontOpt ? fontOpt.family : item.font_family) || undefined,
       'font-style':       fontOpt?.italic ? 'italic' : undefined,
       'font-size':        emScaled(item.font_size),
-      'font-weight':      raw(item.font_weight),
-      'line-height':      raw(item.line_height),
-      'border-radius':    pxScaled(item.border_radius),
-      'background-color': item.background_color || undefined,
-      'padding-top':      pxScaled(item.padding_vertical),
-      'padding-bottom':   pxScaled(item.padding_vertical),
-      'padding-left':     pxScaled(item.padding_horizontal),
-      'padding-right':    pxScaled(item.padding_horizontal),
-      'margin-top':       pxScaled(item.margin_top),
-      'margin-bottom':    pxScaled(item.margin_bottom),
+      'font-weight':      rawValue(item.font_weight),
+      'line-height':      rawValue(item.line_height),
       'text-shadow':              (item.text_shadow_color && item.text_shadow_offset_x !== '' && item.text_shadow_offset_y !== '')
         ? Array(Math.max(1, Number(item.text_shadow_layers ?? 2) || 1))
             .fill(`${pxScaled(item.text_shadow_offset_x ?? 0)} ${pxScaled(item.text_shadow_offset_y ?? 0)} ${pxScaled(item.text_shadow_blur ?? 0)} ${item.text_shadow_color}`)
@@ -2543,31 +2649,55 @@ class ChronoTileCard extends LitElement {
     };
   }
 
+  // ── Does this item resolve to a real action when tapped? ───────────────────
+  // Controls the 'clickable' cursor affordance only — actual dispatch happens
+  // in the pointer gesture handlers below, via data-item-index hit-testing,
+  // not via a per-item click listener (see _onPointerUp).
+  // Entities default to more-info (matching HA's own convention) unless
+  // tap_action is explicitly set to 'none'; templates have no default action
+  // at all — they show a pointer cursor only when tap_action is explicitly
+  // configured.
+  _itemIsActionable(item, isEntity) {
+    const cfgAction = item.tap_action?.action;
+    return isEntity ? cfgAction !== 'none' : (!!cfgAction && cfgAction !== 'none');
+  }
+
   // ── Render a single overlay item ──────────────────────────────────────────
   _renderItem(item) {
     if (item.show === false) return html``;
     ensureFontLoaded(item.font_family);
+    const idx = this._config.items.indexOf(item);
     if ('template' in item) {
-      const key    = `item-${this._config.items.indexOf(item)}`;
+      const key    = `item-${idx}`;
       const value  = this._itemValues[key] ?? '';
-      const hasTap = item.tap_action && item.tap_action.action !== 'none';
+      const clickable = this._itemIsActionable(item, false);
       return html`
         <span
-          class="overlay-template-item${hasTap ? ' clickable' : ''}"
-          style=${styleMap(this._itemStyleMap(item))}
-          @click=${hasTap ? () => this._handleAction(item) : undefined}
+          class="overlay-template-item${clickable ? ' clickable' : ''}"
+          data-item-index="${idx}"
+          style=${styleMap({ ...this._itemContainerStyleMap(item), ...this._itemTextStyleMap(item) })}
         >${value}</span>
       `;
     }
 
     if ('entity' in item) {
-      const stateObj  = this._hass?.states?.[item.entity];
+      const stateObj      = this._hass?.states?.[item.entity];
+      const containerStyle = this._itemContainerStyleMap(item);
+      const textStyle       = this._itemTextStyleMap(item);
+
       if (!stateObj) {
         return html`
-          <span class="overlay-entity-missing" title="Entity not found: ${item.entity}">!</span>
+          <div
+            class="overlay-entity-item overlay-entity-missing"
+            data-item-index="${idx}"
+            style=${styleMap(containerStyle)}
+            title="Entity not found: ${item.entity}"
+          >
+            <span class="entity-state-label" style=${styleMap(textStyle)}>!</span>
+          </div>
         `;
       }
-      const itemConfig = { ...item, entity: item.entity };
+
       const stateLabel = item.show_state
         ? (item.attribute
             ? `${item.prefix ?? ''}${stateObj.attributes?.[item.attribute] ?? ''}${item.suffix ?? ''}`
@@ -2575,23 +2705,24 @@ class ChronoTileCard extends LitElement {
                 ? this._hass.formatEntityState(stateObj)
                 : stateObj.state))
         : '';
+      const clickable = this._itemIsActionable(item, true);
 
       return html`
         <div
-          class="overlay-entity-item"
-          style=${styleMap(this._itemStyleMap(item))}
+          class="overlay-entity-item${clickable ? ' clickable' : ''}"
+          data-item-index="${idx}"
+          style=${styleMap(containerStyle)}
           title="${stateObj.attributes.friendly_name ?? item.entity}: ${stateObj.state}"
-          @click=${(e) => { e.stopPropagation(); this._handleAction(itemConfig); }}
         >
           ${item.show_icon !== false ? html`
             <ha-state-icon
               .hass=${this._hass}
               .stateObj=${stateObj}
               .icon=${item.icon || undefined}
-              style="--mdc-icon-size: calc(${item.icon_size ?? DEFAULT_ITEM.icon_size}px * var(--scale-factor, 1));"
+              style="--mdc-icon-size: calc(${item.icon_size ?? DEFAULT_ITEM.icon_size}px * var(--scale-factor, 1)); color: ${item.font_color || 'inherit'};"
             ></ha-state-icon>
           ` : ''}
-          ${item.show_state ? html`<span class="entity-state-label">${stateLabel}</span>` : ''}
+          ${item.show_state ? html`<span class="entity-state-label" style=${styleMap(textStyle)}>${stateLabel}</span>` : ''}
         </div>
       `;
     }
@@ -2697,44 +2828,35 @@ class ChronoTileCard extends LitElement {
       flex-direction: column;
       gap: calc(4px * var(--scale-factor, 1));
       pointer-events: auto;
-      min-width: 0;
-      max-width: 100%;
     }
     .overlay-zone-align-left   { align-items: flex-start; text-align: left;   }
     .overlay-zone-align-center { align-items: center;     text-align: center; }
     .overlay-zone-align-right  { align-items: flex-end;   text-align: right;  }
 
+    .clickable {
+      cursor: pointer;
+    }
     .overlay-template-item {
       color: var(--ha-picture-card-text-color, white);
       white-space: pre-wrap;
       line-height: 1.4;
-      min-width: 0;
-      max-width: 100%;
-    }
-    .overlay-template-item.clickable {
-      cursor: pointer;
     }
     .overlay-entity-item {
       display: flex;
       flex-direction: column;
       align-items: center;
-      cursor: pointer;
-      min-width: calc(40px * var(--scale-factor, 1));
     }
     .entity-state-label {
       display: block;
       text-align: center;
       white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
       color: var(--ha-picture-card-text-color, white);
-      max-width: calc(96px * var(--scale-factor, 1));
     }
-    .overlay-entity-missing {
-      color: var(--error-color, #f44336);
-      font-weight: bold;
-      padding: 0 calc(4px * var(--scale-factor, 1));
-    }
+    /* overlay-entity-missing: no styling of its own — the item's own
+       container/text style maps (background, padding, font color, etc.)
+       already apply to .overlay-entity-item and .entity-state-label above;
+       "missing entity" only changes the displayed text to "!", not the
+       item's configured appearance. */
   `;
 
   render() {
