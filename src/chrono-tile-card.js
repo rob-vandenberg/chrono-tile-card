@@ -5,12 +5,26 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '1.1.15';
+const CARD_VERSION = '1.1.16';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v1.1.16: Fix (candidate — needs live confirmation): template text was
+//          wrapping far earlier than the 1/3-cell width it should have had
+//          available. .overlay-cell already had min-width:0 to opt out of
+//          the flexbox default automatic minimum size (content-based floor)
+//          that a flex item gets when min-width:auto; the same default was
+//          still in effect one and two levels further in, on .overlay-zone
+//          (flex item of .overlay-cell) and .overlay-template-item (flex
+//          item of .overlay-zone, column direction) — neither had min-width:0
+//          or max-width:100%, so the same class of constraint could still
+//          apply at those levels despite the cell itself being correctly
+//          sized. Added min-width:0 and max-width:100% to both. Not applied
+//          to .overlay-entity-item/.entity-state-label — the label already
+//          uses white-space:nowrap with ellipsis and doesn't wrap at all, so
+//          out of scope for this bug.
 // v1.1.15: Fix: entity state label ignored item.font_size — .entity-state-label
 //          had its own hardcoded font-size (10px * scale-factor), which always
 //          wins over an inherited value regardless of selector specificity, so
@@ -2683,6 +2697,8 @@ class ChronoTileCard extends LitElement {
       flex-direction: column;
       gap: calc(4px * var(--scale-factor, 1));
       pointer-events: auto;
+      min-width: 0;
+      max-width: 100%;
     }
     .overlay-zone-align-left   { align-items: flex-start; text-align: left;   }
     .overlay-zone-align-center { align-items: center;     text-align: center; }
@@ -2692,6 +2708,8 @@ class ChronoTileCard extends LitElement {
       color: var(--ha-picture-card-text-color, white);
       white-space: pre-wrap;
       line-height: 1.4;
+      min-width: 0;
+      max-width: 100%;
     }
     .overlay-template-item.clickable {
       cursor: pointer;
