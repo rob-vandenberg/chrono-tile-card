@@ -5,12 +5,25 @@ import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/un
 import { repeat }                from 'https://unpkg.com/lit@2.0.0/directives/repeat.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '2.0.19';
+const CARD_VERSION = '2.0.20';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v2.0.20: New getGridOptions() (instance method, per HA's official custom-
+//          card docs — confirmed different from the existing static
+//          getCardSize(), which only governs the legacy Masonry view).
+//          Without it, Sections view had no declared default size for this
+//          card and no basis to offer the native Layout tab, so a fresh
+//          instance fell through to ha-card's CSS min-height:100px floor —
+//          confirmed via live diagnostic data earlier this session that a
+//          real dashboard instance measured exactly 100px tall. Returns
+//          rows:6 (≈376px via HA's documented rows×56 + (rows-1)×8 formula,
+//          matched to a size confirmed to look right when tested manually
+//          via grid_options in YAML), min_rows:2, columns:12 (full width,
+//          matching current usage). No max_rows/max_columns — free to grow
+//          when resized via the Layout tab.
 // v2.0.19: Removed the entire --scale-factor system (REFERENCE_HEIGHT_PX,
 //          the updated()/ResizeObserver mechanism, every calc(...*
 //          var(--scale-factor,1)) in CSS and inline styles). Inherited from
@@ -2239,6 +2252,22 @@ class ChronoTileCard extends LitElement {
 
   static getCardSize() {
     return 3;
+  }
+
+  // Sections-view sizing (instance method, unlike getCardSize — verified via
+  // HA's own developer docs). Without this, Sections view has no default to
+  // size the card against and no way to offer the Layout tab, so a fresh
+  // instance collapses to ha-card's CSS min-height (100px) instead of
+  // getting real space. rows:6 ≈ 376px (rows × 56 + (rows-1) × 8), matched
+  // to what worked well when tested manually via grid_options in YAML.
+  // min_rows:2 stops it collapsing back to unusably small if resized down;
+  // no max — free to grow. columns:12 (full width) matches current usage.
+  getGridOptions() {
+    return {
+      rows: 6,
+      min_rows: 2,
+      columns: 12,
+    };
   }
 
   static getConfigElement() {
